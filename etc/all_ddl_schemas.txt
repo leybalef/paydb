@@ -1,0 +1,5772 @@
+-- DROP SCHEMA "2can";
+
+CREATE SCHEMA "2can" AUTHORIZATION andrey;
+
+-- DROP SEQUENCE "2can".merch_idmerch_seq;
+
+CREATE SEQUENCE "2can".merch_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE "2can".syspay_id_paybank_seq;
+
+CREATE SEQUENCE "2can".syspay_id_paybank_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- "2can".merchant_tap2go определение
+
+-- Drop table
+
+-- DROP TABLE "2can".merchant_tap2go;
+
+CREATE TABLE "2can".merchant_tap2go (
+	idmerch int2 DEFAULT nextval('"2can".merch_idmerch_seq'::regclass) NOT NULL,
+	accesuaries jsonb NULL,
+	mid varchar(50) NULL,
+	syspay_merch int4 NULL,
+	CONSTRAINT merchant_tap2go_pkey PRIMARY KEY (idmerch)
+);
+
+
+-- "2can".syspay определение
+
+-- Drop table
+
+-- DROP TABLE "2can".syspay;
+
+CREATE TABLE "2can".syspay (
+	id int4 DEFAULT nextval('"2can".syspay_id_paybank_seq'::regclass) NOT NULL,
+	json_inside jsonb NULL,
+	CONSTRAINT doc_syspay_pkey PRIMARY KEY (id)
+);
+
+
+
+-- DROP FUNCTION "2can".f_syspay(json);
+
+CREATE OR REPLACE FUNCTION "2can".f_syspay(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xans JSON default '{"ans":"ok"}' ;
+	--input data:
+	--{
+    --}
+BEGIN
+	INSERT INTO "2can".syspay (json_inside) VALUES (x_json) ;
+    RETURN xans;
+END;
+--output data:
+--{"ans": "ok"}
+$function$
+;
+
+-- DROP FUNCTION "2can".f_tr_payment();
+
+CREATE OR REPLACE FUNCTION "2can".f_tr_payment()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xdata JSON; 
+		xpaymerch JSON; 
+		xjsonfirm JSON;
+		xjsoncomm JSON;
+		xlogin JSON;
+		xmerch JSON;
+	  xtarif JSON; 
+		xekassa JSON;
+		xproducts JSON;
+		xbillid INTEGER;
+		xcommparam INTEGER;
+		xyear INTEGER;
+		xidmerch INTEGER;
+		xsum NUMERIC(10,2);
+		xratio NUMERIC(10,2);
+		xidtarif INTEGER;
+		xnewid INTEGER;
+		xfirm CHAR(6);
+		xidlogin CHAR(10);
+		xprivilege VARCHAR;
+		xamount VARCHAR;
+		xdatetime VARCHAR;
+		xemail VARCHAR;
+		xphone VARCHAR;
+		xchannel VARCHAR;
+		xmid VARCHAR;
+BEGIN  
+		SELECT json_inside,json_inside ->> 'MID',(json_inside ->> 'Amount')::numeric,"id",json_inside ->> 'PaidAt',json_inside -> 'Description' 
+		INTO xdata,xmid,xamount,xbillid,xdatetime,xproducts FROM "2can".syspay WHERE "id" = 767; 
+		SELECT accesuaries ->> 'account' INTO xprivilege FROM "2can".merchant_tap2go WHERE mid = xmid;
+		xyear := LEFT(xdatetime,4)::integer;
+		xfirm := LEFT(xprivilege,6);
+		xdata := xdata::jsonb || jsonb_build_object('id_paybank',xbillid);
+		SELECT fljson_firm,fljson_firm ->> 'login',idcommparam INTO xjsonfirm,xidlogin,xcommparam
+		FROM common.firmservice WHERE idfirm = xfirm;
+		SELECT json_commparam INTO xjsoncomm FROM common.commparam WHERE idcommparam = xcommparam AND common.commparam."enable" = TRUE;
+		SELECT attributies INTO xlogin FROM auth.users WHERE login_master = xidlogin;
+		SELECT syspay_merch INTO xidmerch FROM "2can".merchant_tap2go WHERE mid = xmid;
+		SELECT accesuaries,(accesuaries ->> 'format_amount')::numeric INTO xmerch,xratio FROM common.merchant WHERE idmerch = xidmerch;
+		xsum := (xamount::numeric * xratio::numeric)::numeric(10,2);
+		
+		SELECT common.tranztarif."Tarif" INTO xidtarif 
+		FROM common.tranztarif JOIN common.breakesum ON (common.tranztarif."Breakesum" = common.breakesum.idbreake) 
+		WHERE common.tranztarif."Firm" = xfirm AND common.tranztarif."Syspay" = xidmerch AND common.tranztarif."Enable" = 1 
+		AND (xsum < (common.breakesum.json_breakesum ->> 'Maxsum')::numeric AND xsum > (common.breakesum.json_breakesum ->> 'Minsum')::numeric);
+		SELECT json_tarif INTO xtarif FROM common.tarif WHERE idtarif = xidtarif;
+		xpaymerch := jsonb_build_object('id_order',xdata ->> 'id_order','merch',xidmerch);
+		--SELECT ecassa::jsonb INTO xekassa FROM mytosb.info WHERE syspay = xidmerch;
+		--SELECT channel_notify INTO xchannel FROM ekassa.ekassa WHERE id_kass = (xekassa -> 'ecassa' ->> 0)::integer;
+		
+		--INSERT INTO reports.payment(data_json,year,idpaymerch,comm_json,firm_json,merch_json,tarif_json,e_kassa)
+		--VALUES (xdata,xyear,xpaymerch,xjsoncomm,(xjsonfirm::jsonb || xlogin::jsonb),xmerch,xtarif,xekassa) 
+		--ON CONFLICT DO NOTHING RETURNING qtranz INTO xnewid;
+		--PERFORM pg_notify(xchannel,xnewid::text);
+		--RETURN NULL;
+		RETURN xdata;
+END
+$function$
+;
+
+-- DROP SCHEMA ataxi_transfer;
+
+CREATE SCHEMA ataxi_transfer AUTHORIZATION postgres;
+
+-- DROP SEQUENCE ataxi_transfer.calc_counter_seq;
+
+CREATE SEQUENCE ataxi_transfer.calc_counter_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.merch_sch_idmerch_seq;
+
+CREATE SEQUENCE ataxi_transfer.merch_sch_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.order_id_paybank_seq;
+
+CREATE SEQUENCE ataxi_transfer.order_id_paybank_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.order_idorder_seq;
+
+CREATE SEQUENCE ataxi_transfer.order_idorder_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.price_idprice_seq;
+
+CREATE SEQUENCE ataxi_transfer.price_idprice_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.region_idregion_seq;
+
+CREATE SEQUENCE ataxi_transfer.region_idregion_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.tarif_idtarif_seq;
+
+CREATE SEQUENCE ataxi_transfer.tarif_idtarif_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.town_idtown_seq;
+
+CREATE SEQUENCE ataxi_transfer.town_idtown_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer.view_idview_seq;
+
+CREATE SEQUENCE ataxi_transfer.view_idview_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;-- ataxi_transfer."!location" определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer."!location";
+
+CREATE TABLE ataxi_transfer."!location" (
+	id int4 NOT NULL,
+	region varchar(50) NULL,
+	town _text NULL,
+	"location" json NULL
+);
+
+
+-- ataxi_transfer.calc_sec определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.calc_sec;
+
+CREATE TABLE ataxi_transfer.calc_sec (
+	id_calc varchar NOT NULL,
+	"year" int2 NOT NULL,
+	data_calc jsonb NULL,
+	id_order int4 NULL,
+	counter int4 DEFAULT nextval('ataxi_transfer.calc_counter_seq'::regclass) NOT NULL
+)
+PARTITION BY RANGE (year);
+
+
+-- ataxi_transfer.merch_scheme определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.merch_scheme;
+
+CREATE TABLE ataxi_transfer.merch_scheme (
+	idmerch int2 DEFAULT nextval('ataxi_transfer.merch_sch_idmerch_seq'::regclass) NOT NULL,
+	accesuaries jsonb NULL,
+	login varchar(50) NOT NULL,
+	notification jsonb NULL,
+	CONSTRAINT merch_scheme_pkey PRIMARY KEY (idmerch)
+);
+
+
+-- ataxi_transfer."order" определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer."order";
+
+CREATE TABLE ataxi_transfer."order" (
+	id_order int8 DEFAULT nextval('ataxi_transfer.order_idorder_seq'::regclass) NOT NULL,
+	param jsonb NULL,
+	id_calc varchar(50) NOT NULL,
+	"enable" bool DEFAULT false NOT NULL,
+	id_paybank int4 NULL,
+	CONSTRAINT idcalc UNIQUE (id_calc),
+	CONSTRAINT order_pkey PRIMARY KEY (id_order)
+);
+
+
+-- ataxi_transfer.price определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.price;
+
+CREATE TABLE ataxi_transfer.price (
+	id_price int2 DEFAULT nextval('ataxi_transfer.price_idprice_seq'::regclass) NOT NULL,
+	town int2 NOT NULL,
+	view_trans int2 NOT NULL,
+	tarif int2 NOT NULL,
+	amount numeric(10, 2) NULL
+);
+
+
+-- ataxi_transfer.region определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.region;
+
+CREATE TABLE ataxi_transfer.region (
+	id_region int2 DEFAULT nextval('ataxi_transfer.region_idregion_seq'::regclass) NOT NULL,
+	name_region varchar(50) NULL,
+	alias varchar(10) NULL
+);
+
+
+-- ataxi_transfer.tarif определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.tarif;
+
+CREATE TABLE ataxi_transfer.tarif (
+	" id_tarif" int2 DEFAULT nextval('ataxi_transfer.tarif_idtarif_seq'::regclass) NOT NULL,
+	name_tarif varchar(50) NULL,
+	view_trans int2 NULL
+);
+
+
+-- ataxi_transfer.town определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.town;
+
+CREATE TABLE ataxi_transfer.town (
+	id_town int2 DEFAULT nextval('ataxi_transfer.town_idtown_seq'::regclass) NOT NULL,
+	name_town varchar(150) NULL,
+	region int2 NULL,
+	short_name varchar(10) NULL,
+	fld_sort int4 NULL
+);
+
+-- Table Triggers
+
+create trigger insert_town_trigger after
+insert
+    on
+    ataxi_transfer.town for each row execute function ataxi_transfer.insert_town_trigger();
+create trigger update_town_trigger after
+update
+    on
+    ataxi_transfer.town for each row execute function ataxi_transfer.update_town_trigger();
+
+
+-- ataxi_transfer.view_transfer определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.view_transfer;
+
+CREATE TABLE ataxi_transfer.view_transfer (
+	id_view int2 DEFAULT nextval('ataxi_transfer.view_idview_seq'::regclass) NOT NULL,
+	view_name varchar(25) NULL
+);
+
+
+-- ataxi_transfer.x_param определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer.x_param;
+
+CREATE TABLE ataxi_transfer.x_param (
+	jsonb_build_object jsonb NULL
+);
+
+
+-- ataxi_transfer.calc_2023 определение
+
+CREATE TABLE ataxi_transfer.calc_2023 PARTITION OF ataxi_transfer.calc_sec (
+	CONSTRAINT calc_2023_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2023') TO ('2024');
+
+
+-- ataxi_transfer.calc_2024 определение
+
+CREATE TABLE ataxi_transfer.calc_2024 PARTITION OF ataxi_transfer.calc_sec (
+	CONSTRAINT calc_2024_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2024') TO ('2025');
+
+
+-- ataxi_transfer.calc_2025 определение
+
+CREATE TABLE ataxi_transfer.calc_2025 PARTITION OF ataxi_transfer.calc_sec (
+	CONSTRAINT calc_2025_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2025') TO ('2026');
+
+
+-- ataxi_transfer.calc_2026 определение
+
+CREATE TABLE ataxi_transfer.calc_2026 PARTITION OF ataxi_transfer.calc_sec (
+	CONSTRAINT calc_2026_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2026') TO ('2027');
+
+
+-- ataxi_transfer.calc_2027 определение
+
+CREATE TABLE ataxi_transfer.calc_2027 PARTITION OF ataxi_transfer.calc_sec (
+	CONSTRAINT calc_2027_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2027') TO ('2028');
+
+
+-- ataxi_transfer.calc_2028 определение
+
+CREATE TABLE ataxi_transfer.calc_2028 PARTITION OF ataxi_transfer.calc_sec (
+	CONSTRAINT calc_2028_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2028') TO ('2029');
+
+
+-- ataxi_transfer.mv_tariffs исходный текст
+
+CREATE MATERIALIZED VIEW ataxi_transfer.mv_tariffs
+TABLESPACE pg_default
+AS SELECT price.id_price,
+    price.town AS id_town,
+    town.name_town AS town,
+    town.fld_sort,
+    price.view_trans AS id_transfer_type,
+    view_transfer.view_name AS transfer_type,
+    price.tarif AS id_vehicle_size,
+    tarif.name_tarif AS vehicle_size,
+    price.amount
+   FROM ataxi_transfer.price
+     LEFT JOIN ataxi_transfer.town ON price.town = town.id_town
+     LEFT JOIN ataxi_transfer.view_transfer ON price.view_trans = view_transfer.id_view
+     LEFT JOIN ataxi_transfer.tarif tarif ON price.tarif = tarif." id_tarif"
+  ORDER BY price.view_trans, price.tarif, town.fld_sort, town.name_town
+WITH DATA;
+
+-- View indexes:
+CREATE INDEX tariffs_list_idx_id_price ON ataxi_transfer.mv_tariffs USING btree (id_price);
+
+
+
+-- DROP FUNCTION ataxi_transfer."!f_order"(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer."!f_order"(x_json json)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xjs JSON;
+		xid_pay JSON; 
+		xjson JSON;
+		xans JSON;
+		xid_calc VARCHAR;
+		xlogin VARCHAR;
+		xdatetime VARCHAR;
+		xamount VARCHAR;
+		xid INTEGER;
+		xid_paybank INTEGER;
+	-- IN:
+	--	{
+	--        "login": "web_ataxi",
+	--				"id_calc": "hgfhdhfh",
+	--        "amount": 240000,
+	--        "view_transfer": 2,
+	--        "count_places": 4,
+	--        "quote": {
+	--            "adult": 1,
+	--            "younger": 0,
+	--            "baby": 0,
+	--        },
+	--        "name_customer": "",
+	--        "email_customer": "",
+	--        "phone_customer": "+79186222897",
+	--        "transfer": [
+	--            {"to": 4, "from": 1, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"},
+	--            {"to": 2, "from": 6, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"}
+	--        ],
+	--        "timestamp": "2023-04-03T14:30"
+	--    }
+	BEGIN
+		xid_calc := x_json::jsonb ->> 'id_calc';
+		xdatetime := x_json::jsonb ->> 'timestamp';
+		x_json := x_json::jsonb - 'id_calc' - 'timestamp';
+		xlogin := x_json::jsonb ->> 'login';
+		xamount := x_json::jsonb ->> 'amount';
+		BEGIN
+			INSERT INTO ataxi_transfer."order"(param,id_calc)
+			VALUES (x_json,xid_calc) RETURNING id_order INTO xid;
+			EXCEPTION WHEN unique_violation THEN
+				SELECT id_order INTO xid FROM ataxi_transfer."order" WHERE id_calc = xid_calc;
+				xid_pay := jsonb_build_object('id_order',xid::text,'login_dev',xlogin);
+				SELECT json_answer INTO xjs FROM mytosb.syspay WHERE idpay = xid_pay::jsonb;
+				xjs := xjs::jsonb || jsonb_build_object('err',1);
+			RETURN xjs;
+		END;
+			x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		SELECT accesuaries::jsonb || x_json::jsonb INTO xjson 
+		FROM ataxi_transfer.merch_scheme WHERE idmerch = 1;
+		xamount := (xamount::integer * 100)::text;
+		xjson := jsonb_set(xjson::jsonb,'{amount}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,amount_prod}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,price}',xamount::jsonb,FALSE);
+		xans := mytosb.f_syspay(xjson);
+		xid_paybank := xans::jsonb ->> 'newid';		
+		UPDATE ataxi_transfer."order" SET id_paybank = xid_paybank WHERE id_order = xid;
+		RETURN xans;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer."!f_order2"(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer."!f_order2"(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xid INTEGER;
+		xid_calc VARCHAR;
+		xlogin VARCHAR;
+		xdatetime VARCHAR;
+		xjs JSON;
+		xid_pay JSON; 
+		xid_paybank INTEGER;
+	-- IN:
+	--	{
+	--        "login": "web_ataxi",
+	--				"id_calc": "hgfhdhfh",
+	--        "amount": 240000,
+	--        "view_transfer": 2,
+	--        "count_places": 4,
+	--        "quote": {
+	--            "adult": 1,
+	--            "younger": 0,
+	--            "baby": 0,
+	--        },
+	--        "name_customer": "",
+	--        "email_customer": "",
+	--        "phone_customer": "+79186222897",
+	--        "transfer": [
+	--            {"to": 4, "from": 1, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"},
+	--            {"to": 2, "from": 6, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"}
+	--        ],
+	--        "timestamp": "2023-04-03T14:30"
+	--    }
+	BEGIN
+		xid_calc := x_json::jsonb ->> 'id_calc';
+		xdatetime := x_json::jsonb ->> 'timestamp';
+		x_json := x_json::jsonb - 'id_calc' - 'timestamp';
+		xlogin := x_json::jsonb ->> 'login';
+		BEGIN
+			INSERT INTO ataxi_transfer."order"(param,id_calc)
+			VALUES (x_json,xid_calc) RETURNING id_order INTO xid;
+			EXCEPTION WHEN unique_violation THEN
+				SELECT id_order INTO xid FROM ataxi_transfer."order" WHERE id_calc = xid_calc;
+				xid_pay := jsonb_build_object('id_order',xid::text,'login_dev',xlogin);
+				SELECT json_answer INTO xjs FROM mytosb.syspay WHERE idpay = xid_pay::jsonb;
+				xjs := xjs::jsonb || jsonb_build_object('err',1);
+			RETURN xjs;
+		END;
+		x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		xjs := ataxi_transfer.f_syspay(x_json);
+		xid_paybank := xjs::jsonb ->> 'newid';		
+		UPDATE ataxi_transfer."order" SET id_paybank = xid_paybank where id_order = xid;
+    RETURN xjs;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer."!f_syspay"(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer."!f_syspay"(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xans JSON;
+	  x_json JSON;
+	  xamount VARCHAR;
+ BEGIN
+	xamount := xjson::jsonb ->> 'amount';
+	SELECT accesuaries::jsonb || xjson::jsonb INTO x_json 
+	FROM ataxi_transfer.merch_scheme WHERE idmerch = 1;
+	x_json := jsonb_set(x_json::jsonb,'{products,0,amount_prod}',xamount::jsonb,FALSE);
+	x_json := jsonb_set(x_json::jsonb,'{products,0,price}',xamount::jsonb,FALSE);
+    xans := mytosb.f_syspay(x_json);
+	RETURN xans;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_calc(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_calc(xcalc json)
+ RETURNS smallint
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xans JSON;
+		xidcalc VARCHAR;
+		xerr VARCHAR DEFAULT 'dublicate id_order';
+		xamount INTEGER;
+		xtarif INTEGER;
+		xview_trans INTEGER;
+		xarray_length INTEGER;
+		i INTEGER;
+		xyear INTEGER;
+		xsaldo INTEGER DEFAULT 0;
+		x_from INTEGER;
+		x_to INTEGER;
+	--IN:
+	--{
+	--"login": "web_ataxi",
+	--"id_calc": "fhgfhgf-hfhthg-jhgjhv",
+	--"count_places": 3,
+	--"transfer": [{"from": 9, "to": 4},{"from": 6, "to": 8}],
+	--"view_transfer": 2
+	--"timestamp": "2023-00-00T00:00"
+	--}
+	BEGIN
+		xidcalc := xcalc::jsonb ->> 'id_calc';
+		xyear := LEFT(xcalc::jsonb ->> 'timestamp',4)::integer;
+		xarray_length := jsonb_array_length(xcalc::jsonb -> 'transfer');
+		xtarif := (xcalc::jsonb ->> 'count_places')::integer;
+		xview_trans := (xcalc::jsonb ->> 'view_transfer')::integer; 
+		xcalc := xcalc::jsonb - 'id_calc';
+		FOR i IN 1..xarray_length LOOP
+			x_from := (xcalc::jsonb -> 'transfer' -> i - 1 ->> 'from')::integer;
+			x_to := (xcalc::jsonb -> 'transfer' -> i - 1 ->> 'to')::integer;
+			SELECT amount INTO xamount FROM ataxi_transfer.price 
+			WHERE tarif = xtarif AND view_trans = xview_trans AND (town = x_from OR town = x_to);
+			xsaldo := xsaldo + xamount;
+		END LOOP;
+		xcalc := xcalc::jsonb || jsonb_build_object('xsaldo',xsaldo);
+		BEGIN
+			INSERT INTO ataxi_transfer.calc_sec (id_calc,"year",data_calc) 
+			VALUES (xidcalc,xyear,xcalc);
+			EXCEPTION WHEN unique_violation THEN
+			xans := jsonb_build_object('err',1,'ans',xerr);
+			RETURN xans;
+	END;
+	RETURN xsaldo;
+	END
+	--out:
+	--{
+	--"login": "web_ataxi",
+	--"order_id": "1111111111"
+	--"principal": "200121",
+	--"amount": 0,
+	--"phone_customer": "+79000000000",
+	--"email_customer": null,
+	--"name_customer": null,
+	--"flight_train": null,
+	--"arrival_datetime": "2023-00-00T00:00",
+	--"hotel ": null,
+	--"quote": {"adult": 1, "younger": 0, "baby": 0}
+	--}
+	$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_change_point();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_change_point()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xitems JSON DEFAULT '{}';
+		xjson JSON;
+		xid_region INTEGER;
+		xkey VARCHAR;
+	BEGIN
+	FOR xid_region IN 
+	SELECT id_region FROM ataxi_transfer.region
+	LOOP
+		SELECT "alias" INTO xkey FROM ataxi_transfer.region WHERE id_region = xid_region;
+		SELECT jsonb_build_object(xkey,array_to_json(array_agg(jsonb_build_object('value',name_town,'text',name_town,'short_name',short_name)))) 
+		INTO xjson FROM ataxi_transfer.town	WHERE ataxi_transfer.town.region = xid_region;
+		xitems := xitems::jsonb || xjson::jsonb;
+  END LOOP;
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_locat();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_locat()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+	xitems JSON;
+	xjson JSON;
+	BEGIN
+		SELECT jsonb_build_object('adler',array_to_json(array_agg(jsonb_build_object('value',name_town,'text',name_town,'short_name',short_name)))) 
+		INTO xitems FROM ataxi_transfer.town	WHERE ataxi_transfer.town.region = 1;
+		SELECT jsonb_build_object('abkhazia',array_to_json(array_agg(jsonb_build_object('value',name_town,'text',name_town,'short_name',short_name)))) 
+		INTO xjson FROM ataxi_transfer.town WHERE region = 2;
+		xitems := xitems::jsonb || xjson::jsonb;
+		
+		--SELECT ataxi_transfer.town.name_town AS town,ataxi_transfer.town.short_name AS short_name,
+		--ataxi_transfer.region.name_region AS region,ataxi_transfer.region."alias" AS "alias"
+    --FROM ataxi_transfer.town JOIN ataxi_transfer.region 
+		--ON ataxi_transfer.town.region = ataxi_transfer.region.id_region
+
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_locat1();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_locat1()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xitems JSON DEFAULT '{}';
+		xjson JSON;
+		xid_region INTEGER;
+		xkey VARCHAR;
+	BEGIN
+	FOR xid_region IN 
+	SELECT id_region FROM ataxi_transfer.region
+	LOOP
+		SELECT "alias" INTO xkey FROM ataxi_transfer.region WHERE id_region = xid_region;
+		SELECT jsonb_build_object(xkey,array_to_json(array_agg(jsonb_build_object('value',id_town::text,'text',name_town,'short_name',short_name)))) 
+		INTO xjson FROM ataxi_transfer.town	WHERE ataxi_transfer.town.region = xid_region;
+		xitems := xitems::jsonb || xjson::jsonb;
+  END LOOP;
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_location();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_location()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+	xitems JSON DEFAULT '{}';
+	xjson JSON;
+	xid_region INTEGER;
+	BEGIN
+	FOR xid_region IN 
+	SELECT id_region FROM ataxi_transfer.region
+	LOOP
+		SELECT jsonb_build_object("alias",name_region) INTO xjson 
+		FROM ataxi_transfer.region WHERE id_region = xid_region;
+		xitems := xitems::jsonb || xjson::jsonb;
+	END LOOP;
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_order(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_order(x_json json)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xjs JSON;
+		xid_pay JSON; 
+		xjson JSON;
+		xans JSON;
+		xid_calc VARCHAR;
+		xlogin VARCHAR;
+		xdatetime VARCHAR;
+		xamount VARCHAR;
+		xid INTEGER;
+		xid_paybank INTEGER;
+	-- IN:
+	--	{
+	--        "login": "web_ataxi",
+	--				"id_calc": "hgfhdhfh",
+	--        "amount": 240000,
+	--        "view_transfer": 2,
+	--        "count_places": 4,
+	--        "quote": {
+	--            "adult": 1,
+	--            "younger": 0,
+	--            "baby": 0,
+	--        },
+	--        "name_customer": "",
+	--        "email_customer": "",
+	--        "phone_customer": "+79186222897",
+	--        "transfer": [
+	--            {"to": 4, "from": 1, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"},
+	--            {"to": 2, "from": 6, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"}
+	--        ],
+	--        "timestamp": "2023-04-03T14:30"
+	--    }
+	BEGIN
+		xid_calc := x_json::jsonb ->> 'id_calc';
+		xdatetime := x_json::jsonb ->> 'timestamp';
+		x_json := x_json::jsonb - 'id_calc' - 'timestamp';
+		xlogin := x_json::jsonb ->> 'login';
+		xamount := x_json::jsonb ->> 'amount';
+		BEGIN
+			INSERT INTO ataxi_transfer."order"(param,id_calc)
+			VALUES (x_json,xid_calc) RETURNING id_order INTO xid;
+			EXCEPTION WHEN unique_violation THEN
+				SELECT id_order INTO xid FROM ataxi_transfer."order" WHERE id_calc = xid_calc;
+				xid_pay := jsonb_build_object('id_order',xid::text,'login_dev',xlogin);
+				SELECT json_answer INTO xjs FROM mytosb.syspay WHERE idpay = xid_pay::jsonb;
+				xjs := xjs::jsonb || jsonb_build_object('err',1);
+			RETURN xjs;
+		END;
+			UPDATE ataxi_transfer.calc_sec SET id_order = xid WHERE id_calc = xid_calc;
+			x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		SELECT accesuaries::jsonb || x_json::jsonb INTO xjson 
+		FROM ataxi_transfer.merch_scheme WHERE idmerch = 1;
+		xamount := (xamount::integer * 100)::text;
+		--xamount := (xamount::integer / 100)::text;   -- меньшая оплата в реальности
+		xjson := jsonb_set(xjson::jsonb,'{amount}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,amount_prod}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,price}',xamount::jsonb,FALSE);
+		xans := mytosb.f_syspay(xjson);
+		xid_paybank := xans::jsonb ->> 'newid';		
+		UPDATE ataxi_transfer."order" SET id_paybank = xid_paybank WHERE id_order = xid;
+		RETURN xans;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_order_id(text);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_order_id(id text)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE x_param JSON DEFAULT '{}';
+	DECLARE xfiskal VARCHAR;
+  DECLARE xidorder INTEGER;
+  DECLARE xxidorder JSON;
+  DECLARE xfiskal_text VARCHAR DEFAULT 'Электронный чек об оплате вы можете скачать здесь:';
+	BEGIN
+		SELECT id_order INTO xidorder FROM ataxi_transfer."order" WHERE id_calc = id ;
+ 	  SELECT call_back ->> 'receipt_url' INTO xfiskal FROM ekassa.ekassa_check WHERE data_check ->> 'id_order' = xidorder::text ;
+ 	  IF xfiskal != '' THEN
+			SELECT jsonb_build_object('id_order', id_order, 'id_calc', id_calc, 'params', param, 'is_payed', t_syspay."enable", 
+			'sbp', t_syspay.json_answer, 'fiscal', jsonb_build_object('fiskal_url', xfiskal,'description', xfiskal_text)) INTO x_param
+			FROM ataxi_transfer."order" t_order
+			LEFT JOIN mytosb.syspay t_syspay ON t_order.id_paybank = t_syspay.id_paybank WHERE id_calc = id;
+		ELSE 
+			SELECT jsonb_build_object('id_order', id_order, 'id_calc', id_calc, 'params', param, 'is_payed', t_syspay."enable", 
+			'sbp', t_syspay.json_answer, 'fiscal', null) INTO x_param FROM ataxi_transfer."order" t_order
+			LEFT JOIN mytosb.syspay t_syspay ON t_order.id_paybank = t_syspay.id_paybank WHERE id_calc = id;
+    END IF;		
+	RETURN x_param;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_order_status();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_order_status()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xjs_idpay JSON;
+		xlogin VARCHAR;
+		xid_order INTEGER;
+BEGIN
+  SELECT NEW.idpay INTO xjs_idpay FROM mytosb.syspay; 
+	xlogin := xjs_idpay::jsonb ->> 'login_dev';
+	IF xlogin = 'web_ataxi' THEN
+		xid_order := (xjs_idpay::jsonb ->> 'id_order')::integer;
+		UPDATE ataxi_transfer."order" SET "enable" = TRUE WHERE id_order = xid_order;
+	END IF;
+	RETURN NEW;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_order_status1();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_order_status1()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xjs_idpay JSON;
+		xlogin VARCHAR;
+		xid_order INTEGER;
+BEGIN
+	SELECT idpay INTO xjs_idpay FROM mytosb.syspay WHERE id_paybank = 516;
+	xlogin := xjs_idpay::jsonb ->> 'login_dev';
+	IF xlogin = 'web_ataxi' THEN
+		xid_order := (xjs_idpay::jsonb ->> 'id_order')::integer;
+		UPDATE ataxi_transfer."order" SET "enable" = TRUE WHERE id_order = xid_order;
+	END IF;
+	RETURN xid_order;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_order_test(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_order_test(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xid INTEGER;
+		xid_calc VARCHAR;
+		xlogin VARCHAR;
+		xdatetime VARCHAR;
+		xjs JSON;
+		xid_pay JSON; 
+		xid_paybank INTEGER;
+	BEGIN
+		xid_calc := x_json::jsonb ->> 'id_calc';
+		xdatetime := x_json::jsonb ->> 'timestamp';
+		x_json := x_json::jsonb - 'id_calc' - 'timestamp';
+		xlogin := x_json::jsonb ->> 'login';
+		x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		xjs := ataxi_transfer.f_syspay(x_json);
+		xid_paybank := xjs::jsonb ->> 'newid';		
+    RETURN xjs;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_send_check(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_send_check(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+  DECLARE 
+		xbillid JSONB;
+	  xcallback JSON;
+	  xans JSON;
+	  xlogin VARCHAR;
+	  xidcalc VARCHAR;
+	  xxlogin VARCHAR DEFAULT 'web_ataxi';
+    xurl VARCHAR ;
+    xlink VARCHAR DEFAULT '<a href="@url" target="_blank"> ссылке </a>'; 
+	  xidorder INTEGER;
+	  xsubjcust VARCHAR DEFAULT 'mail from AtaxiTransfer';
+	  xaddrcust VARCHAR;
+	  xbodycust VARCHAR DEFAULT 'Спасибо за оплату заказа';
+BEGIN
+	  xidorder := xjson::jsonb ->> 'id_order';
+    xurl := xjson::jsonb ->> 'fiskal_url';
+    SELECT param ->> 'login', param ->> 'email_customer' INTO xlogin, xaddrcust FROM ataxi_transfer."order" where id_order = xidorder ;
+   	IF xlogin = xxlogin THEN
+       	SELECT notification ->> 'notify_customer' INTO  xbodycust from ataxi_transfer.merch_scheme  WHERE  login = xxlogin ;
+ --       SELECT id_calc 	INTO xidcalc FROM ataxi_transfer."order" where id_order = xidorder ;
+ --       xurl := xurl || xidcalc ;
+ --       xlink := REPLACE(xlink,'@url', xurl::text);       
+        xbodycust := REPLACE(xbodycust,'@order', xidorder::text);
+       	xans := jsonb_build_object('customer',jsonb_build_object('Addr',xaddrcust, 'Subj',xsubjcust, 'Body',xbodycust));
+        RETURN xans;
+	END IF;
+    xans := jsonb_build_object('login', xlogin );
+RETURN xans;
+END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_send_email(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_send_email(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+  DECLARE xbillid JSONB;
+	DECLARE xcallback JSON;
+	DECLARE xans JSON;
+	DECLARE xlogin VARCHAR;
+	DECLARE xidcalc VARCHAR;
+	DECLARE xxlogin VARCHAR DEFAULT 'web_ataxi';
+  DECLARE xurl VARCHAR DEFAULT 'https://ataxi.atotx.ru/transfer/order/';
+  DECLARE xlink VARCHAR DEFAULT '<a href="@url" target="_blank"> ссылке </a>'; 
+	DECLARE xidorder INTEGER;
+	DECLARE xsubj VARCHAR DEFAULT 'А-Такси: Заказ оформлен';
+	DECLARE xaddr VARCHAR;
+	DECLARE xbody VARCHAR;
+BEGIN
+	xbillid := xjson::jsonb -> 'qrcId';
+	SELECT json_inside ->> 'id_order', json_inside ->> 'login' 	INTO xidorder,xlogin FROM mytosb.syspay WHERE json_callback -> 'qrcId' = xbillid;
+   	IF xlogin = xxlogin THEN
+       	SELECT notification ->> 'email_ataxi', notification ->> 'notify_carrier' INTO xaddr,xbody from ataxi_transfer.merch_scheme  WHERE  login = xxlogin ;
+        SELECT id_calc 	INTO xidcalc FROM ataxi_transfer."order" where id_order = xidorder ;
+        xurl := xurl || xidcalc ;
+        xlink := REPLACE(xlink,'@url', xurl::text);       
+        xbody := REPLACE(xbody,'@links', xlink::text);
+       	xans := jsonb_build_object('carrier',jsonb_build_object('Addr',xaddr, 'Subj',xsubj, 'Body',xbody));
+        RETURN xans;
+	END IF;
+    xans := jsonb_build_object('login', xlogin );
+RETURN xans;
+end;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.f_send_email_before_pay(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.f_send_email_before_pay(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+  DECLARE xbillid JSONB;
+	DECLARE xcallback JSON;
+	DECLARE xans JSON;
+	DECLARE xlogin VARCHAR;
+	DECLARE xidcalc VARCHAR;
+	DECLARE xxlogin VARCHAR DEFAULT 'web_ataxi';
+  DECLARE xurl VARCHAR DEFAULT 'https://ataxi.atotx.ru/transfer/order/';
+  DECLARE xlink VARCHAR DEFAULT '<a href="@url" target="_blank"> ссылке </a>'; 
+	DECLARE xidorder INTEGER;
+	DECLARE xsubj VARCHAR DEFAULT 'А-Такси: Заказ создан но не оплачен';
+	DECLARE xaddr VARCHAR;
+	DECLARE xbody VARCHAR;
+BEGIN
+    xlogin := xjson::jsonb -> 'login';
+	xidcalc := xjson::jsonb -> 'id_calc';
+    xidcalc := trim(both '"' from xidcalc );
+    xlogin := trim(both '"' from xlogin );
+	IF xlogin = xxlogin THEN
+       	SELECT notification ->> 'email_ataxi', notification ->> 'notify_carrier_before_pay' INTO xaddr,xbody from ataxi_transfer.merch_scheme  WHERE  login = xxlogin ;
+        xurl := xurl || xidcalc ;
+        xlink := REPLACE(xlink,'@url', xurl::text);       
+        xbody := REPLACE(xbody,'@links', xlink::text);
+        xans := jsonb_build_object('carrier',jsonb_build_object('Addr',xaddr, 'Subj',xsubj, 'Body',xbody));
+        RETURN xans;
+	END IF;
+    xans := jsonb_build_object('login', xlogin );
+RETURN xans;
+end;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.insert_town_trigger();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.insert_town_trigger()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  PERFORM (
+    WITH payload("id_town", "name_town", "region", "short_name", "fld_sort") AS (
+    SELECT NEW.id_town, NEW.name_town, NEW.region, NEW.short_name, NEW.fld_sort
+    )
+  SELECT pg_notify('cashe_town', row_to_json(payload) :: TEXT)
+    FROM payload
+  );
+  RETURN NULL;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer.update_town_trigger();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer.update_town_trigger()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  PERFORM (
+    WITH payload("id_town", "name_town", "region", "short_name", "fld_sort") AS (
+    SELECT OLD.id_town, OLD.name_town, OLD.region, OLD.short_name, OLD.fld_sort
+    )
+  SELECT pg_notify('cashe_town', row_to_json(payload) :: TEXT)
+    FROM payload
+  );
+  RETURN NULL;
+END
+$function$
+;
+
+-- DROP SCHEMA ataxi_transfer1;
+
+CREATE SCHEMA ataxi_transfer1 AUTHORIZATION postgres;
+
+-- DROP SEQUENCE ataxi_transfer1.calc_counter_seq;
+
+CREATE SEQUENCE ataxi_transfer1.calc_counter_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.merch_sch_idmerch_seq;
+
+CREATE SEQUENCE ataxi_transfer1.merch_sch_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.order_id_paybank_seq;
+
+CREATE SEQUENCE ataxi_transfer1.order_id_paybank_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.order_idorder_seq;
+
+CREATE SEQUENCE ataxi_transfer1.order_idorder_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.price_idprice_seq;
+
+CREATE SEQUENCE ataxi_transfer1.price_idprice_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.region_idregion_seq;
+
+CREATE SEQUENCE ataxi_transfer1.region_idregion_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.tarif_idtarif_seq;
+
+CREATE SEQUENCE ataxi_transfer1.tarif_idtarif_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.town_idtown_seq;
+
+CREATE SEQUENCE ataxi_transfer1.town_idtown_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE ataxi_transfer1.view_idview_seq;
+
+CREATE SEQUENCE ataxi_transfer1.view_idview_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;-- ataxi_transfer1."!location" определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1."!location";
+
+CREATE TABLE ataxi_transfer1."!location" (
+	id int4 NOT NULL,
+	region varchar(50) NULL,
+	town _text NULL,
+	"location" json NULL
+);
+
+
+-- ataxi_transfer1.calc_sec определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.calc_sec;
+
+CREATE TABLE ataxi_transfer1.calc_sec (
+	id_calc varchar NOT NULL,
+	"year" int2 NOT NULL,
+	data_calc jsonb NULL,
+	id_order int4 NULL,
+	counter int4 DEFAULT nextval('ataxi_transfer.calc_counter_seq'::regclass) NOT NULL
+)
+PARTITION BY RANGE (year);
+
+
+-- ataxi_transfer1.merch_scheme определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.merch_scheme;
+
+CREATE TABLE ataxi_transfer1.merch_scheme (
+	idmerch int2 DEFAULT nextval('ataxi_transfer.merch_sch_idmerch_seq'::regclass) NOT NULL,
+	accesuaries jsonb NULL,
+	login varchar(50) NOT NULL,
+	notification jsonb NULL,
+	CONSTRAINT merch_scheme_pkey PRIMARY KEY (idmerch)
+);
+
+
+-- ataxi_transfer1."order" определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1."order";
+
+CREATE TABLE ataxi_transfer1."order" (
+	id_order int8 DEFAULT nextval('ataxi_transfer.order_idorder_seq'::regclass) NOT NULL,
+	param jsonb NULL,
+	id_calc varchar(50) NOT NULL,
+	"enable" bool DEFAULT false NOT NULL,
+	id_paybank int4 NULL,
+	CONSTRAINT idcalc UNIQUE (id_calc),
+	CONSTRAINT order_pkey PRIMARY KEY (id_order)
+);
+
+
+-- ataxi_transfer1.price определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.price;
+
+CREATE TABLE ataxi_transfer1.price (
+	id_price int2 DEFAULT nextval('ataxi_transfer.price_idprice_seq'::regclass) NOT NULL,
+	town int2 NOT NULL,
+	view_trans int2 NOT NULL,
+	tarif int2 NOT NULL,
+	amount numeric(10, 2) NULL
+);
+
+
+-- ataxi_transfer1.region определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.region;
+
+CREATE TABLE ataxi_transfer1.region (
+	id_region int2 DEFAULT nextval('ataxi_transfer.region_idregion_seq'::regclass) NOT NULL,
+	name_region varchar(50) NULL,
+	alias varchar(10) NULL
+);
+
+
+-- ataxi_transfer1.tarif определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.tarif;
+
+CREATE TABLE ataxi_transfer1.tarif (
+	" id_tarif" int2 DEFAULT nextval('ataxi_transfer.tarif_idtarif_seq'::regclass) NOT NULL,
+	name_tarif varchar(50) NULL,
+	view_trans int2 NULL
+);
+
+
+-- ataxi_transfer1.town определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.town;
+
+CREATE TABLE ataxi_transfer1.town (
+	id_town int2 DEFAULT nextval('ataxi_transfer.town_idtown_seq'::regclass) NOT NULL,
+	name_town varchar(150) NULL,
+	region int2 NULL,
+	short_name varchar(10) NULL,
+	fld_sort int4 NULL
+);
+
+-- Table Triggers
+
+create trigger insert_town_trigger after
+insert
+    on
+    ataxi_transfer1.town for each row execute function ataxi_transfer.insert_town_trigger();
+create trigger update_town_trigger after
+update
+    on
+    ataxi_transfer1.town for each row execute function ataxi_transfer.update_town_trigger();
+
+
+-- ataxi_transfer1.view_transfer определение
+
+-- Drop table
+
+-- DROP TABLE ataxi_transfer1.view_transfer;
+
+CREATE TABLE ataxi_transfer1.view_transfer (
+	id_view int2 DEFAULT nextval('ataxi_transfer.view_idview_seq'::regclass) NOT NULL,
+	view_name varchar(25) NULL
+);
+
+
+-- ataxi_transfer1.calc_2023 определение
+
+CREATE TABLE ataxi_transfer1.calc_2023 PARTITION OF ataxi_transfer1.calc_sec (
+	CONSTRAINT calc_2023_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2023') TO ('2024');
+
+
+-- ataxi_transfer1.calc_2024 определение
+
+CREATE TABLE ataxi_transfer1.calc_2024 PARTITION OF ataxi_transfer1.calc_sec (
+	CONSTRAINT calc_2024_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2024') TO ('2025');
+
+
+-- ataxi_transfer1.calc_2025 определение
+
+CREATE TABLE ataxi_transfer1.calc_2025 PARTITION OF ataxi_transfer1.calc_sec (
+	CONSTRAINT calc_2025_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2025') TO ('2026');
+
+
+-- ataxi_transfer1.calc_2026 определение
+
+CREATE TABLE ataxi_transfer1.calc_2026 PARTITION OF ataxi_transfer1.calc_sec (
+	CONSTRAINT calc_2026_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2026') TO ('2027');
+
+
+-- ataxi_transfer1.calc_2027 определение
+
+CREATE TABLE ataxi_transfer1.calc_2027 PARTITION OF ataxi_transfer1.calc_sec (
+	CONSTRAINT calc_2027_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2027') TO ('2028');
+
+
+-- ataxi_transfer1.calc_2028 определение
+
+CREATE TABLE ataxi_transfer1.calc_2028 PARTITION OF ataxi_transfer1.calc_sec (
+	CONSTRAINT calc_2028_pkey PRIMARY KEY (id_calc)
+) FOR VALUES FROM ('2028') TO ('2029');
+
+
+-- ataxi_transfer1.mv_tariffs1 исходный текст
+
+CREATE MATERIALIZED VIEW ataxi_transfer1.mv_tariffs1
+TABLESPACE pg_default
+AS SELECT price.id_price,
+    price.town AS id_town,
+    town.name_town AS town,
+    town.fld_sort,
+    price.view_trans AS id_transfer_type,
+    view_transfer.view_name AS transfer_type,
+    price.tarif AS id_vehicle_size,
+    tarif.name_tarif AS vehicle_size,
+    price.amount
+   FROM ataxi_transfer1.price
+     LEFT JOIN ataxi_transfer1.town ON price.town = town.id_town
+     LEFT JOIN ataxi_transfer1.view_transfer ON price.view_trans = view_transfer.id_view
+     LEFT JOIN ataxi_transfer1.tarif tarif ON price.tarif = tarif." id_tarif"
+  ORDER BY price.view_trans, price.tarif, town.fld_sort, town.name_town
+WITH DATA;
+
+
+
+-- DROP FUNCTION ataxi_transfer1.f_calc(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_calc(xcalc json)
+ RETURNS smallint
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xans JSON;
+		xidcalc VARCHAR;
+		xerr VARCHAR DEFAULT 'dublicate id_order';
+		xamount INTEGER;
+		xtarif INTEGER;
+		xview_trans INTEGER;
+		xarray_length INTEGER;
+		i INTEGER;
+		xyear INTEGER;
+		xsaldo INTEGER DEFAULT 0;
+		x_from INTEGER;
+		x_to INTEGER;
+	--IN:
+	--{
+	--"login": "web_ataxi",
+	--"id_calc": "fhgfhgf-hfhthg-jhgjhv",
+	--"count_places": 3,
+	--"transfer": [{"from": 9, "to": 4},{"from": 6, "to": 8}],
+	--"view_transfer": 2
+	--"timestamp": "2023-00-00T00:00"
+	--}
+	BEGIN
+		xidcalc := xcalc::jsonb ->> 'id_calc';
+		xyear := LEFT(xcalc::jsonb ->> 'timestamp',4)::integer;
+		xarray_length := jsonb_array_length(xcalc::jsonb -> 'transfer');
+		xtarif := (xcalc::jsonb ->> 'count_places')::integer;
+		xview_trans := (xcalc::jsonb ->> 'view_transfer')::integer; 
+		xcalc := xcalc::jsonb - 'id_calc';
+		FOR i IN 1..xarray_length LOOP
+			x_from := (xcalc::jsonb -> 'transfer' -> i - 1 ->> 'from')::integer;
+			x_to := (xcalc::jsonb -> 'transfer' -> i - 1 ->> 'to')::integer;
+			SELECT amount INTO xamount FROM ataxi_transfer.price 
+			WHERE tarif = xtarif AND view_trans = xview_trans AND (town = x_from OR town = x_to);
+			xsaldo := xsaldo + xamount;
+		END LOOP;
+		xcalc := xcalc::jsonb || jsonb_build_object('xsaldo',xsaldo);
+		BEGIN
+			INSERT INTO ataxi_transfer.calc_sec (id_calc,"year",data_calc) 
+			VALUES (xidcalc,xyear,xcalc);
+			EXCEPTION WHEN unique_violation THEN
+			xans := jsonb_build_object('err',1,'ans',xerr);
+			RETURN xans;
+	END;
+	RETURN xsaldo;
+	END
+	--out:
+	--{
+	--"login": "web_ataxi",
+	--"order_id": "1111111111"
+	--"principal": "200121",
+	--"amount": 0,
+	--"phone_customer": "+79000000000",
+	--"email_customer": null,
+	--"name_customer": null,
+	--"flight_train": null,
+	--"arrival_datetime": "2023-00-00T00:00",
+	--"hotel ": null,
+	--"quote": {"adult": 1, "younger": 0, "baby": 0}
+	--}
+	$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_change_point();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_change_point()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xitems JSON DEFAULT '{}';
+		xjson JSON;
+		xid_region INTEGER;
+		xkey VARCHAR;
+	BEGIN
+	FOR xid_region IN 
+	SELECT id_region FROM ataxi_transfer.region
+	LOOP
+		SELECT "alias" INTO xkey FROM ataxi_transfer.region WHERE id_region = xid_region;
+		SELECT jsonb_build_object(xkey,array_to_json(array_agg(jsonb_build_object('value',name_town,'text',name_town,'short_name',short_name)))) 
+		INTO xjson FROM ataxi_transfer.town	WHERE ataxi_transfer.town.region = xid_region;
+		xitems := xitems::jsonb || xjson::jsonb;
+  END LOOP;
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_locat();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_locat()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+	xitems JSON;
+	xjson JSON;
+	BEGIN
+		SELECT jsonb_build_object('adler',array_to_json(array_agg(jsonb_build_object('value',name_town,'text',name_town,'short_name',short_name)))) 
+		INTO xitems FROM ataxi_transfer.town	WHERE ataxi_transfer.town.region = 1;
+		SELECT jsonb_build_object('abkhazia',array_to_json(array_agg(jsonb_build_object('value',name_town,'text',name_town,'short_name',short_name)))) 
+		INTO xjson FROM ataxi_transfer.town WHERE region = 2;
+		xitems := xitems::jsonb || xjson::jsonb;
+		
+		--SELECT ataxi_transfer.town.name_town AS town,ataxi_transfer.town.short_name AS short_name,
+		--ataxi_transfer.region.name_region AS region,ataxi_transfer.region."alias" AS "alias"
+    --FROM ataxi_transfer.town JOIN ataxi_transfer.region 
+		--ON ataxi_transfer.town.region = ataxi_transfer.region.id_region
+
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_locat1();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_locat1()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xitems JSON DEFAULT '{}';
+		xjson JSON;
+		xid_region INTEGER;
+		xkey VARCHAR;
+	BEGIN
+	FOR xid_region IN 
+	SELECT id_region FROM ataxi_transfer.region
+	LOOP
+		SELECT "alias" INTO xkey FROM ataxi_transfer.region WHERE id_region = xid_region;
+		SELECT jsonb_build_object(xkey,array_to_json(array_agg(jsonb_build_object('value',id_town::text,'text',name_town,'short_name',short_name)))) 
+		INTO xjson FROM ataxi_transfer.town	WHERE ataxi_transfer.town.region = xid_region;
+		xitems := xitems::jsonb || xjson::jsonb;
+  END LOOP;
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_location();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_location()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+	xitems JSON DEFAULT '{}';
+	xjson JSON;
+	xid_region INTEGER;
+	BEGIN
+	FOR xid_region IN 
+	SELECT id_region FROM ataxi_transfer.region
+	LOOP
+		SELECT jsonb_build_object("alias",name_region) INTO xjson 
+		FROM ataxi_transfer.region WHERE id_region = xid_region;
+		xitems := xitems::jsonb || xjson::jsonb;
+	END LOOP;
+  RETURN xitems;
+  END
+  $function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_order(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_order(x_json json)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xjs JSON;
+		xid_pay JSON; 
+		xjson JSON;
+		xans JSON;
+		xid_calc VARCHAR;
+		xlogin VARCHAR;
+		xdatetime VARCHAR;
+		xamount VARCHAR;
+		xid INTEGER;
+		xid_paybank INTEGER;
+	-- IN:
+	--	{
+	--        "login": "web_ataxi",
+	--				"id_calc": "hgfhdhfh",
+	--        "amount": 240000,
+	--        "view_transfer": 2,
+	--        "count_places": 4,
+	--        "quote": {
+	--            "adult": 1,
+	--            "younger": 0,
+	--            "baby": 0,
+	--        },
+	--        "name_customer": "",
+	--        "email_customer": "",
+	--        "phone_customer": "+79186222897",
+	--        "transfer": [
+	--            {"to": 4, "from": 1, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"},
+	--            {"to": 2, "from": 6, "flight_train": "", "hotel": "", "datetime_transfer": "2023-04-03T14:30"}
+	--        ],
+	--        "timestamp": "2023-04-03T14:30"
+	--    }
+	BEGIN
+		xid_calc := x_json::jsonb ->> 'id_calc';
+		xdatetime := x_json::jsonb ->> 'timestamp';
+		x_json := x_json::jsonb - 'id_calc' - 'timestamp';
+		xlogin := x_json::jsonb ->> 'login';
+		xamount := x_json::jsonb ->> 'amount';
+		BEGIN
+			INSERT INTO ataxi_transfer."order"(param,id_calc)
+			VALUES (x_json,xid_calc) RETURNING id_order INTO xid;
+			EXCEPTION WHEN unique_violation THEN
+				SELECT id_order INTO xid FROM ataxi_transfer."order" WHERE id_calc = xid_calc;
+				xid_pay := jsonb_build_object('id_order',xid::text,'login_dev',xlogin);
+				SELECT json_answer INTO xjs FROM mytosb.syspay WHERE idpay = xid_pay::jsonb;
+				xjs := xjs::jsonb || jsonb_build_object('err',1);
+			RETURN xjs;
+		END;
+			UPDATE ataxi_transfer.calc_sec SET id_order = xid WHERE id_calc = xid_calc;
+			x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		SELECT accesuaries::jsonb || x_json::jsonb INTO xjson 
+		FROM ataxi_transfer.merch_scheme WHERE idmerch = 1;
+		xamount := (xamount::integer * 100)::text;
+		xamount := (xamount::integer / 1000)::text;
+		xjson := jsonb_set(xjson::jsonb,'{amount}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,amount_prod}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,price}',xamount::jsonb,FALSE);
+		xans := mytosb.f_syspay(xjson);
+		xid_paybank := xans::jsonb ->> 'newid';		
+		UPDATE ataxi_transfer."order" SET id_paybank = xid_paybank WHERE id_order = xid;
+		RETURN xans;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_order_id(text);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_order_id(id text)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	declare x_param JSON DEFAULT '{}';
+	declare xfiskal VARCHAR;
+    declare xidorder INTEGER;
+    declare xxidorder JSON;
+    declare xfiskal_text VARCHAR DEFAULT 'Электронный чек об оплате вы можете скачать здесь:';
+	begin
+		SELECT id_order INTO xidorder FROM ataxi_transfer."order" where id_calc = id ;
+ 	    SELECT call_back ->> 'receipt_url' INTO xfiskal FROM ekassa.ekassa_check WHERE data_check ->> 'id_order' = xidorder::text ;
+ 	    if xfiskal != '' then
+			SELECT jsonb_build_object('id_order', id_order, 'id_calc', id_calc, 'params', param, 'is_payed', t_syspay."enable", 'sbp', t_syspay.json_answer, 'fiscal', jsonb_build_object('fiskal_url', xfiskal,'description', xfiskal_text)) into x_param
+			FROM ataxi_transfer."order" t_order
+			LEFT JOIN mytosb.syspay t_syspay on t_order.id_paybank = t_syspay.id_paybank
+			WHERE id_calc = id;
+		else 
+			SELECT jsonb_build_object('id_order', id_order, 'id_calc', id_calc, 'params', param, 'is_payed', t_syspay."enable", 'sbp', t_syspay.json_answer, 'fiscal', null) into x_param
+			FROM ataxi_transfer."order" t_order
+			LEFT JOIN mytosb.syspay t_syspay on t_order.id_paybank = t_syspay.id_paybank
+			WHERE id_calc = id;
+        end if;		
+	
+	RETURN x_param;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_order_status();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_order_status()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xjs_idpay JSON;
+		xlogin VARCHAR;
+		xid_order INTEGER;
+BEGIN
+  SELECT NEW.idpay INTO xjs_idpay FROM mytosb.syspay; 
+	xlogin := xjs_idpay::jsonb ->> 'login_dev';
+	IF xlogin = 'web_ataxi' THEN
+		xid_order := (xjs_idpay::jsonb ->> 'id_order')::integer;
+		UPDATE ataxi_transfer."order" SET "enable" = TRUE WHERE id_order = xid_order;
+	END IF;
+	RETURN NEW;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_order_status1();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_order_status1()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xjs_idpay JSON;
+		xlogin VARCHAR;
+		xid_order INTEGER;
+BEGIN
+	SELECT idpay INTO xjs_idpay FROM mytosb.syspay WHERE id_paybank = 516;
+	xlogin := xjs_idpay::jsonb ->> 'login_dev';
+	IF xlogin = 'web_ataxi' THEN
+		xid_order := (xjs_idpay::jsonb ->> 'id_order')::integer;
+		UPDATE ataxi_transfer."order" SET "enable" = TRUE WHERE id_order = xid_order;
+	END IF;
+	RETURN xid_order;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_order_test(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_order_test(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xid INTEGER;
+		xid_calc VARCHAR;
+		xlogin VARCHAR;
+		xdatetime VARCHAR;
+		xjs JSON;
+		xid_pay JSON; 
+		xid_paybank INTEGER;
+	BEGIN
+		xid_calc := x_json::jsonb ->> 'id_calc';
+		xdatetime := x_json::jsonb ->> 'timestamp';
+		x_json := x_json::jsonb - 'id_calc' - 'timestamp';
+		xlogin := x_json::jsonb ->> 'login';
+		x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		xjs := ataxi_transfer.f_syspay(x_json);
+		xid_paybank := xjs::jsonb ->> 'newid';		
+    RETURN xjs;
+	END;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_send_check(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_send_check(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xbillid JSONB;
+	DECLARE xcallback JSON;
+	DECLARE xans JSON;
+	DECLARE xlogin VARCHAR;
+	DECLARE xidcalc VARCHAR;
+	DECLARE xxlogin VARCHAR DEFAULT 'web_ataxi';
+    DECLARE xurl VARCHAR ;
+    DECLARE xlink VARCHAR DEFAULT '<a href="@url" target="_blank"> ссылке </a>'; 
+	DECLARE xidorder INTEGER;
+	DECLARE xsubjcust VARCHAR DEFAULT 'mail from AtaxiTransfer';
+	DECLARE xaddrcust VARCHAR;
+	DECLARE xbodycust VARCHAR DEFAULT 'Спасибо за оплату заказа';
+begin
+
+	--xidorder := xjson::jsonb -> 'client' ->> 'id_order';
+	xidorder := xjson::jsonb ->> 'id_order';
+    xurl := xjson::jsonb ->> 'fiskal_url';
+    SELECT param ->> 'login', param ->> 'email_customer' INTO xlogin, xaddrcust FROM ataxi_transfer."order" where id_order = xidorder ;
+   	IF xlogin = xxlogin THEN
+       	SELECT notification ->> 'notify_customer' INTO  xbodycust from ataxi_transfer.merch_scheme  WHERE  login = xxlogin ;
+--        SELECT id_calc 	INTO xidcalc FROM ataxi_transfer."order" where id_order = xidorder ;
+--        xurl := xurl || xidcalc ;
+        xlink := REPLACE(xlink,'@url', xurl::text);       
+        xbodycust := REPLACE(xbodycust,'@link', xlink::text);
+       	xans := jsonb_build_object('customer',jsonb_build_object('Addr',xaddrcust, 'Subj',xsubjcust, 'Body',xbodycust));
+        RETURN xans;
+	END IF;
+    xans := jsonb_build_object('login', xlogin );
+RETURN xans;
+end;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.f_send_email(json);
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.f_send_email(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xbillid JSONB;
+	DECLARE xcallback JSON;
+	DECLARE xans JSON;
+	DECLARE xlogin VARCHAR;
+	DECLARE xidcalc VARCHAR;
+	DECLARE xxlogin VARCHAR DEFAULT 'web_ataxi';
+    DECLARE xurl VARCHAR DEFAULT 'https://ataxi.atotx.ru/transfer/order/';
+    DECLARE xlink VARCHAR DEFAULT '<a href="@url" target="_blank"> ссылке </a>'; 
+	DECLARE xidorder INTEGER;
+	DECLARE xsubj VARCHAR DEFAULT 'А-Такси: Заказ оформлен';
+	DECLARE xaddr VARCHAR;
+	DECLARE xbody VARCHAR;
+BEGIN
+	xbillid := xjson::jsonb -> 'qrcId';
+	SELECT json_inside ->> 'id_order', json_inside ->> 'login' 	INTO xidorder,xlogin FROM mytosb.syspay WHERE json_callback -> 'qrcId' = xbillid;
+   	IF xlogin = xxlogin THEN
+       	SELECT notification ->> 'email_ataxi', notification ->> 'notify_carrier' INTO xaddr,xbody from ataxi_transfer.merch_scheme  WHERE  login = xxlogin ;
+        SELECT id_calc 	INTO xidcalc FROM ataxi_transfer."order" where id_order = xidorder ;
+        xurl := xurl || xidcalc ;
+        xlink := REPLACE(xlink,'@url', xurl::text);       
+        xbody := REPLACE(xbody,'@links', xlink::text);
+       	xans := jsonb_build_object('carrier',jsonb_build_object('Addr',xaddr, 'Subj',xsubj, 'Body',xbody));
+        RETURN xans;
+	END IF;
+    xans := jsonb_build_object('login', xlogin );
+RETURN xans;
+end;
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.insert_town_trigger();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.insert_town_trigger()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  PERFORM (
+    WITH payload("id_town", "name_town", "region", "short_name", "fld_sort") AS (
+    SELECT NEW.id_town, NEW.name_town, NEW.region, NEW.short_name, NEW.fld_sort
+    )
+  SELECT pg_notify('cashe_town', row_to_json(payload) :: TEXT)
+    FROM payload
+  );
+  RETURN NULL;
+END
+$function$
+;
+
+-- DROP FUNCTION ataxi_transfer1.update_town_trigger();
+
+CREATE OR REPLACE FUNCTION ataxi_transfer1.update_town_trigger()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  PERFORM (
+    WITH payload("id_town", "name_town", "region", "short_name", "fld_sort") AS (
+    SELECT OLD.id_town, OLD.name_town, OLD.region, OLD.short_name, OLD.fld_sort
+    )
+  SELECT pg_notify('cashe_town', row_to_json(payload) :: TEXT)
+    FROM payload
+  );
+  RETURN NULL;
+END
+$function$
+;
+
+-- DROP SCHEMA auth;
+
+CREATE SCHEMA auth AUTHORIZATION andrey;
+
+-- DROP SEQUENCE auth.usergroup_id_usergroup_seq;
+
+CREATE SEQUENCE auth.usergroup_id_usergroup_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE auth.users_idpriv_seq;
+
+CREATE SEQUENCE auth.users_idpriv_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- auth.usergroup определение
+
+-- Drop table
+
+-- DROP TABLE auth.usergroup;
+
+CREATE TABLE auth.usergroup (
+	id_usergroup serial4 NOT NULL,
+	name_usergroup varchar(255) DEFAULT nextval('auth.usergroup_id_usergroup_seq'::regclass) NULL,
+	CONSTRAINT usergroup_pkey PRIMARY KEY (id_usergroup)
+);
+
+
+-- auth.users определение
+
+-- Drop table
+
+-- DROP TABLE auth.users;
+
+CREATE TABLE auth.users (
+	login_master bpchar(10) NOT NULL,
+	login_slave varchar(50) NULL,
+	"password" varchar(255) NULL,
+	"enable" bool DEFAULT true NOT NULL,
+	attributies jsonb NULL,
+	user_group int2 NULL,
+	fld_uuid uuid DEFAULT gen_random_uuid() NULL
+)
+PARTITION BY RANGE (login_master);
+
+
+-- auth.users1 определение
+
+-- Drop table
+
+-- DROP TABLE auth.users1;
+
+CREATE TABLE auth.users1 (
+	idpriv int4 DEFAULT nextval('auth.users_idpriv_seq'::regclass) NOT NULL,
+	fljson_privilege jsonb NULL
+);
+
+
+-- auth.users_900 определение
+
+CREATE TABLE auth.users_900 PARTITION OF auth.users (
+	CONSTRAINT users_900_pkey PRIMARY KEY (login_master)
+) FOR VALUES FROM ('9000000000') TO ('9250000000');
+
+
+-- auth.users_925 определение
+
+CREATE TABLE auth.users_925 PARTITION OF auth.users (
+	CONSTRAINT users_925_pkey PRIMARY KEY (login_master)
+) FOR VALUES FROM ('9250000000') TO ('9500000000');
+
+
+-- auth.users_950 определение
+
+CREATE TABLE auth.users_950 PARTITION OF auth.users (
+	CONSTRAINT users_950_pkey PRIMARY KEY (login_master)
+) FOR VALUES FROM ('9500000000') TO ('9750000000');
+
+
+-- auth.users_975 определение
+
+CREATE TABLE auth.users_975 PARTITION OF auth.users (
+	CONSTRAINT users_975_pkey PRIMARY KEY (login_master)
+) FOR VALUES FROM ('9750000000') TO ('9999999999');
+
+
+
+-- DROP FUNCTION auth.f_api_users(bpchar);
+
+CREATE OR REPLACE FUNCTION auth.f_api_users(xlogin character)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xvalue json;
+    DECLARE xphone VARCHAR;
+    DECLARE xvalue2 json;
+    declare xabsent VARCHAR DEFAULT 'Not found';
+	BEGIN
+	xlogin := xlogin::json ->> 'user_phone';	
+	SELECT login_master INTO xphone FROM auth.users WHERE login_master = xlogin and "enable" = true;
+    IF xphone is null THEN 
+	   SELECT json_build_object('user', xabsent) INTO xvalue2 ;
+       RETURN xvalue2;
+    ELSE    
+       SELECT attributies INTO xvalue FROM auth.users WHERE login_master = xlogin and "enable" = true;
+       SELECT json_build_object('key',"login_master") INTO xvalue2 FROM auth.users WHERE login_master = xlogin and "enable" = true;
+       xvalue := xvalue::jsonb || xvalue2::jsonb;
+	   RETURN xvalue;
+	END IF;
+	END;
+$function$
+;
+
+-- DROP SCHEMA common;
+
+CREATE SCHEMA common AUTHORIZATION postgres;
+
+-- DROP SEQUENCE common.breakesum_idbreake_seq;
+
+CREATE SEQUENCE common.breakesum_idbreake_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE common.commparam_idcommparam_seq;
+
+CREATE SEQUENCE common.commparam_idcommparam_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE common.commun_idcommun_seq;
+
+CREATE SEQUENCE common.commun_idcommun_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE common.merchant_idmerch_seq;
+
+CREATE SEQUENCE common.merchant_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE common.service_id_service_seq;
+
+CREATE SEQUENCE common.service_id_service_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE common.tarif_idtarif_seq;
+
+CREATE SEQUENCE common.tarif_idtarif_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE common.tranztarif_idtranz_seq;
+
+CREATE SEQUENCE common.tranztarif_idtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;-- common.banks определение
+
+-- Drop table
+
+-- DROP TABLE common.banks;
+
+CREATE TABLE common.banks (
+	bik bpchar(9) NOT NULL,
+	name_bank varchar(50) NULL,
+	CONSTRAINT banks_pkey PRIMARY KEY (bik)
+);
+
+
+-- common.breakesum определение
+
+-- Drop table
+
+-- DROP TABLE common.breakesum;
+
+CREATE TABLE common.breakesum (
+	idbreake smallserial NOT NULL,
+	json_breakesum jsonb NULL,
+	CONSTRAINT breakesum_pkey PRIMARY KEY (idbreake)
+);
+
+
+-- common.commparam определение
+
+-- Drop table
+
+-- DROP TABLE common.commparam;
+
+CREATE TABLE common.commparam (
+	idcommparam serial4 NOT NULL,
+	json_commparam jsonb NULL,
+	" app" varchar(10) NULL,
+	"enable" bool NULL,
+	CONSTRAINT commparam_pkey PRIMARY KEY (idcommparam)
+);
+
+
+-- common.commun определение
+
+-- Drop table
+
+-- DROP TABLE common.commun;
+
+CREATE TABLE common.commun (
+	idcommun serial4 NOT NULL,
+	"NameComm" varchar(50) NOT NULL,
+	"Comment" varchar(250) NOT NULL,
+	" template_answer" varchar(255) NULL,
+	" enable" bool DEFAULT true NULL,
+	CONSTRAINT communication_pkey PRIMARY KEY (idcommun)
+);
+
+
+-- common.department определение
+
+-- Drop table
+
+-- DROP TABLE common.department;
+
+CREATE TABLE common.department (
+	id varchar(12) NOT NULL,
+	"name" varchar(250) NOT NULL,
+	en_name varchar(250) NOT NULL,
+	color varchar(20) NOT NULL,
+	CONSTRAINT department_pkey PRIMARY KEY (id)
+);
+
+
+-- common.firmservice определение
+
+-- Drop table
+
+-- DROP TABLE common.firmservice;
+
+CREATE TABLE common.firmservice (
+	idfirm bpchar(6) NOT NULL,
+	"enable" bool DEFAULT true NULL,
+	fljson_firm jsonb NULL,
+	idcommparam int4 NOT NULL,
+	firm varchar(4) NOT NULL,
+	service varchar(4) NOT NULL,
+	"location" varchar(255) NULL,
+	CONSTRAINT firmservice_pkey PRIMARY KEY (idfirm)
+);
+
+
+-- common.merchant определение
+
+-- Drop table
+
+-- DROP TABLE common.merchant;
+
+CREATE TABLE common.merchant (
+	xjson jsonb NULL,
+	idmerch serial4 NOT NULL,
+	accesuaries jsonb NULL,
+	" enable" bool DEFAULT true NULL,
+	CONSTRAINT merchant_pkey PRIMARY KEY (idmerch)
+);
+
+
+-- common.organisations определение
+
+-- Drop table
+
+-- DROP TABLE common.organisations;
+
+CREATE TABLE common.organisations (
+	inn_org bpchar(12) NOT NULL,
+	name_org varchar(50) NULL,
+	form_org varchar(30) NULL,
+	id_firm varchar(2) NULL,
+	CONSTRAINT organisations_pkey PRIMARY KEY (inn_org)
+);
+
+
+-- common.region_code определение
+
+-- Drop table
+
+-- DROP TABLE common.region_code;
+
+CREATE TABLE common.region_code (
+	id_region varchar(2) NOT NULL,
+	region_name varchar(255) NULL,
+	CONSTRAINT region_code_pkey PRIMARY KEY (id_region)
+);
+
+
+-- common.service определение
+
+-- Drop table
+
+-- DROP TABLE common.service;
+
+CREATE TABLE common.service (
+	id_service varchar(16) DEFAULT nextval('common.service_id_service_seq'::regclass) NOT NULL,
+	"enable" bool DEFAULT true NOT NULL,
+	json_service jsonb NULL,
+	service_name varchar(50) NULL,
+	CONSTRAINT service_pkey PRIMARY KEY (id_service)
+);
+
+-- Table Triggers
+
+create trigger tr_mvservice after
+insert
+    or
+delete
+    or
+update
+    of id_service,
+    enable,
+    json_service,
+    service_name on
+    common.service for each row execute function drive_pay.f_mvservice();
+
+
+-- common.tarif определение
+
+-- Drop table
+
+-- DROP TABLE common.tarif;
+
+CREATE TABLE common.tarif (
+	idtarif serial4 NOT NULL,
+	"enable" int2 DEFAULT 1 NULL,
+	json_tarif jsonb NULL,
+	CONSTRAINT tarif_pkey PRIMARY KEY (idtarif)
+);
+
+
+-- common.tranztarif определение
+
+-- Drop table
+
+-- DROP TABLE common.tranztarif;
+
+CREATE TABLE common.tranztarif (
+	idtranz serial4 NOT NULL,
+	"Firm" varchar(6) NOT NULL,
+	"Tarif" int4 NOT NULL,
+	"Syspay" int2 NOT NULL,
+	"Breakesum" int2 DEFAULT 1 NOT NULL,
+	login bpchar(10) NOT NULL,
+	"Enable" int4 DEFAULT 1 NOT NULL,
+	delay int4 DEFAULT 0 NOT NULL,
+	CONSTRAINT tranztarif_pkey PRIMARY KEY ("Firm", "Tarif", "Syspay", "Breakesum", "Enable")
+);
+
+
+
+-- DROP FUNCTION common.f_array(varchar);
+
+CREATE OR REPLACE FUNCTION common.f_array(xarray character varying)
+ RETURNS character varying
+ LANGUAGE plpython3u
+AS $function$
+import json
+		
+x_array = json.loads(xarray)
+x_array = x_array[1]
+		
+		
+return x_array
+  $function$
+;
+
+-- DROP FUNCTION common.f_gen_pass_bcript();
+
+CREATE OR REPLACE FUNCTION common.f_gen_pass_bcript()
+ RETURNS character varying
+ LANGUAGE plpython3u
+AS $function$
+import bcrypt
+	
+passwd = b'R87hf#98rtbnYtr!'		
+salt = bcrypt.gensalt()
+hashed = bcrypt.hashpw(passwd,salt)
+return hashed
+$function$
+;
+
+-- DROP FUNCTION common.f_timestamp();
+
+CREATE OR REPLACE FUNCTION common.f_timestamp()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xdatetime VARCHAR;
+	BEGIN
+  xdatetime := CURRENT_TIMESTAMP(3) AT time ZONE 'Europe/Moscow';
+	RETURN xdatetime;
+END
+$function$
+;
+
+-- DROP FUNCTION common.uuid_v7_gen();
+
+CREATE OR REPLACE FUNCTION common.uuid_v7_gen()
+ RETURNS uuid
+ LANGUAGE plpgsql
+AS $function$
+declare
+ cts timestamptz;
+ state text = current_setting('uuidv7.old_tp',true);
+ old_tp text = split_part(state, ':', 1);
+ base int = coalesce(nullif(split_part(state,':',4),'')::int,(random()*16777215/2-1)::int);
+ tp text;
+ entropy text;
+ seq text=base;
+ seqn int=split_part(state,':',2);
+ ver text = coalesce(split_part(state,':',3),to_hex(8+(random()*3)::int));
+begin
+ base = (random()*16777215/2-1)::int;
+ cts = clock_timestamp();
+ tp = lpad(to_hex(floor(extract(epoch from cts)*1000)::int8),12,'0')||'7';
+ if tp is distinct from old_tp then old_tp = tp;
+ ver = to_hex(8+(random()*3)::int);
+ base = (random()*16777215/2-1)::int;
+ seqn = base;
+ else
+ seqn = seqn+(random()*1000)::int;
+ end if;
+ perform set_config('uuidv7.old_tp',old_tp||':'||seqn||':'||ver||':'||base, false);
+ entropy = md5(gen_random_uuid()::text);
+ seq = lpad(to_hex(seqn),6,'0');
+ return (tp || substring(seq from 1 for 3) || ver || substring(seq from 4 for 3)
+ 			|| substring(entropy from 1 for 12))::uuid;
+end
+$function$
+;
+
+-- DROP SCHEMA core;
+
+CREATE SCHEMA core AUTHORIZATION postgres;
+
+-- DROP SCHEMA drive_pay;
+
+CREATE SCHEMA drive_pay AUTHORIZATION postgres;
+
+-- DROP TYPE drive_pay."status_order";
+
+CREATE TYPE drive_pay."status_order" AS ENUM (
+	'new',
+	'prepare',
+	'expect',
+	'close');
+
+-- DROP SEQUENCE drive_pay.merch_sch_idmerch_seq;
+
+CREATE SEQUENCE drive_pay.merch_sch_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE drive_pay.order_id_paybank_seq;
+
+CREATE SEQUENCE drive_pay.order_id_paybank_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE drive_pay.order_idorder_seq;
+
+CREATE SEQUENCE drive_pay.order_idorder_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;-- drive_pay.merch_scheme определение
+
+-- Drop table
+
+-- DROP TABLE drive_pay.merch_scheme;
+
+CREATE TABLE drive_pay.merch_scheme (
+	idmerch int2 DEFAULT nextval('ataxi_transfer.merch_sch_idmerch_seq'::regclass) NOT NULL,
+	accesuaries jsonb NULL,
+	login varchar(50) NOT NULL,
+	notification jsonb NULL,
+	CONSTRAINT merch_scheme_pkey PRIMARY KEY (idmerch)
+);
+
+
+-- drive_pay."order" определение
+
+-- Drop table
+
+-- DROP TABLE drive_pay."order";
+
+CREATE TABLE drive_pay."order" (
+	id_order int8 DEFAULT nextval('ataxi_transfer.order_idorder_seq'::regclass) NOT NULL,
+	param jsonb NULL,
+	id_paybank int4 NULL,
+	"enable" drive_pay."status_order" NULL,
+	CONSTRAINT order_pkey PRIMARY KEY (id_order)
+);
+
+
+-- drive_pay.mv_service исходный текст
+
+CREATE MATERIALIZED VIEW drive_pay.mv_service
+TABLESPACE pg_default
+AS SELECT service.id_service,
+    service.service_name
+   FROM common.service
+WITH DATA;
+
+
+
+-- DROP FUNCTION drive_pay.f_mvservice();
+
+CREATE OR REPLACE FUNCTION drive_pay.f_mvservice()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	BEGIN
+		REFRESH MATERIALIZED VIEW drive_pay.mv_service;
+		
+		RETURN NULL;
+  END
+$function$
+;
+
+-- DROP FUNCTION drive_pay.f_order(json);
+
+CREATE OR REPLACE FUNCTION drive_pay.f_order(x_json json)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xjs JSON;
+		xid_pay JSON; 
+		xjson JSON;
+		xans JSON;
+		xlogin VARCHAR;
+		xurl_callback VARCHAR;
+		xdatetime VARCHAR;
+		xamount VARCHAR;
+		xphone VARCHAR;
+		xemail VARCHAR;
+		xid INTEGER;
+		xid_paybank INTEGER;
+		xmerch INTEGER DEFAULT 1;
+	--input_data:
+	--	{
+	--        "id_order": "5r6tfytgyu-ytfguyui-uytguyg-juhyuyh",
+	--			  "uuid": "ytytfhgf",
+	--        "amount": 240000
+	--    }
+	BEGIN
+		xdatetime := common.f_timestamp();
+		INSERT INTO drive_pay."order"(param)
+		VALUES (x_json::jsonb || jsonb_build_object('timestamp',xdatetime)) RETURNING id_order INTO xid;
+		SELECT login,accesuaries ->> 'url_callback',accesuaries ->> 'phone_customer',accesuaries ->> 'email_customer'
+		INTO xlogin,xurl_callback,xphone,xemail 
+		FROM drive_pay.merch_scheme WHERE idmerch = xmerch;
+		xamount := x_json::jsonb ->> 'amount';
+		
+		--BEGIN
+			
+				--xid_pay := jsonb_build_object('id_order',xid::text,'login_dev',xlogin);
+				--SELECT json_answer INTO xjs FROM mytosb.syspay WHERE idpay = xid_pay::jsonb;
+				--xjs := xjs::jsonb || jsonb_build_object('err',1);
+			--RETURN xjs;
+		--END;
+			--UPDATE drive_pay.calc_sec SET id_order = xid WHERE id_calc = xid_calc;
+		x_json := x_json::jsonb || jsonb_build_object('id_order',xid,'datetime',xdatetime);
+		SELECT accesuaries::jsonb || x_json::jsonb INTO xjson 
+		FROM drive_pay.merch_scheme WHERE idmerch = 1;
+		--xamount := (xamount::integer * 100)::text;
+		--xamount := (xamount::integer / 1000)::text;
+		xjson := jsonb_set(xjson::jsonb,'{amount}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,amount_prod}',xamount::jsonb,FALSE);
+		xjson := jsonb_set(xjson::jsonb,'{products,0,price}',xamount::jsonb,FALSE);
+		--xans := mytosb.f_syspay(xjson);
+		--xid_paybank := xans::jsonb ->> 'newid';		
+		--UPDATE ataxi_transfer."order" SET id_paybank = xid_paybank WHERE id_order = xid;
+		RETURN xdatetime;
+	END;
+	--output data:
+	--{
+  --"login_dev": "driver_pay",
+	--"url_callback": "https:.......", 
+  --"id_order": "11a5ce1b-336a-11ed-a8af-b4d5bd9a0as",
+  --"amount": 2400,
+	--"uuid": "",
+	--"merch": 28,
+  --"phone_ customer": "+79101234567",
+  --"email_customer": "mail@mail.ru",
+  --"datetime": "2023-02-17T12:13:30",
+  --"principal": "200190",
+  --"products": 
+  --[
+  --{
+  --"name_prod": "услуги такси", "unit": "1","count": 1, "price": 2400,"amount_prod": 2400
+  --}
+  --]
+  --}
+$function$
+;
+
+-- DROP FUNCTION drive_pay.f_order_id(text);
+
+CREATE OR REPLACE FUNCTION drive_pay.f_order_id(id text)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	declare x_param JSON DEFAULT '{}';
+	declare xfiskal VARCHAR;
+    declare xidorder INTEGER;
+    declare xxidorder JSON;
+    declare xfiskal_text VARCHAR DEFAULT 'Электронный чек об оплате вы можете скачать здесь:';
+	begin
+		SELECT id_order INTO xidorder FROM ataxi_transfer."order" where id_calc = id ;
+ 	    SELECT call_back ->> 'receipt_url' INTO xfiskal FROM ekassa.ekassa_check WHERE data_check ->> 'id_order' = xidorder::text ;
+ 	    if xfiskal != '' then
+			SELECT jsonb_build_object('id_order', id_order, 'id_calc', id_calc, 'params', param, 'is_payed', t_syspay."enable", 'sbp', t_syspay.json_answer, 'fiscal', jsonb_build_object('fiskal_url', xfiskal,'description', xfiskal_text)) into x_param
+			FROM ataxi_transfer."order" t_order
+			LEFT JOIN mytosb.syspay t_syspay on t_order.id_paybank = t_syspay.id_paybank
+			WHERE id_calc = id;
+		else 
+			SELECT jsonb_build_object('id_order', id_order, 'id_calc', id_calc, 'params', param, 'is_payed', t_syspay."enable", 'sbp', t_syspay.json_answer, 'fiscal', null) into x_param
+			FROM ataxi_transfer."order" t_order
+			LEFT JOIN mytosb.syspay t_syspay on t_order.id_paybank = t_syspay.id_paybank
+			WHERE id_calc = id;
+        end if;		
+	
+	RETURN x_param;
+	END;
+$function$
+;
+
+-- DROP FUNCTION drive_pay.f_order_status();
+
+CREATE OR REPLACE FUNCTION drive_pay.f_order_status()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xjs_idpay JSON;
+		xlogin VARCHAR;
+		xid_order INTEGER;
+BEGIN
+  SELECT NEW.idpay INTO xjs_idpay FROM mytosb.syspay; 
+	xlogin := xjs_idpay::jsonb ->> 'login_dev';
+	IF xlogin = 'web_ataxi' THEN
+		xid_order := (xjs_idpay::jsonb ->> 'id_order')::integer;
+		UPDATE ataxi_transfer."order" SET "enable" = TRUE WHERE id_order = xid_order;
+	END IF;
+	RETURN NEW;
+END
+$function$
+;
+
+-- DROP FUNCTION drive_pay.f_order_status_test();
+
+CREATE OR REPLACE FUNCTION drive_pay.f_order_status_test()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xjs_idpay JSON;
+		xlogin VARCHAR;
+		xid_order INTEGER;
+BEGIN
+  SELECT idpay INTO xjs_idpay FROM mytosb.syspay WHERE id_paybank = 776; 
+	xlogin := xjs_idpay::jsonb ->> 'login_dev';
+	IF xlogin = 'web_ataxi' THEN
+		xid_order := (xjs_idpay::jsonb ->> 'id_order')::integer;
+		UPDATE ataxi_transfer."order" SET "enable" = TRUE WHERE id_order = xid_order;
+	END IF;
+	RETURN xjs_idpay;
+END
+$function$
+;
+
+-- DROP SCHEMA ekassa;
+
+CREATE SCHEMA ekassa AUTHORIZATION postgres;
+
+-- DROP SEQUENCE ekassa.ekassa_id_ekassa_seq;
+
+CREATE SEQUENCE ekassa.ekassa_id_ekassa_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- ekassa.ekassa определение
+
+-- Drop table
+
+-- DROP TABLE ekassa.ekassa;
+
+CREATE TABLE ekassa.ekassa (
+	id_kass int4 DEFAULT nextval('ekassa.ekassa_id_ekassa_seq'::regclass) NOT NULL,
+	json_settings jsonb NULL,
+	org varchar(12) NULL,
+	provider varchar(50) NULL,
+	channel_notify varchar(20) NULL,
+	CONSTRAINT spr_ekassa_pkey PRIMARY KEY (id_kass)
+);
+
+
+-- ekassa.ekassa_check определение
+
+-- Drop table
+
+-- DROP TABLE ekassa.ekassa_check;
+
+CREATE TABLE ekassa.ekassa_check (
+	id_ekassa int4 DEFAULT nextval('ekassa.ekassa_id_ekassa_seq'::regclass) NOT NULL,
+	query_check jsonb NULL,
+	ans_ekassa jsonb NULL,
+	call_back jsonb NULL,
+	"year" int2 NOT NULL,
+	data_check jsonb NULL,
+	qtranz_payment int8 NULL,
+	query_check2 varchar NULL
+)
+PARTITION BY RANGE (year);
+
+
+-- ekassa.ekassa_2023 определение
+
+CREATE TABLE ekassa.ekassa_2023 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2023_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2023 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2023') TO ('2024');
+
+
+-- ekassa.ekassa_2024 определение
+
+CREATE TABLE ekassa.ekassa_2024 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2024_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2024 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2024') TO ('2025');
+
+
+-- ekassa.ekassa_2025 определение
+
+CREATE TABLE ekassa.ekassa_2025 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2025_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2025 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2025') TO ('2026');
+
+
+-- ekassa.ekassa_2026 определение
+
+CREATE TABLE ekassa.ekassa_2026 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2026_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2026 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2026') TO ('2027');
+
+
+-- ekassa.ekassa_2027 определение
+
+CREATE TABLE ekassa.ekassa_2027 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2027_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2027 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2027') TO ('2028');
+
+
+-- ekassa.ekassa_2028 определение
+
+CREATE TABLE ekassa.ekassa_2028 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2028_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2028 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2028') TO ('2029');
+
+
+-- ekassa.ekassa_2029 определение
+
+CREATE TABLE ekassa.ekassa_2029 PARTITION OF ekassa.ekassa_check (
+	CONSTRAINT ekassa_2029_pkey PRIMARY KEY (id_ekassa),
+	CONSTRAINT qtranz_pay2029 UNIQUE (qtranz_payment)
+) FOR VALUES FROM ('2029') TO ('2030');
+
+
+
+-- DROP FUNCTION ekassa.f_ansclient(json, bpchar);
+
+CREATE OR REPLACE FUNCTION ekassa.f_ansclient(param json, ans_client character)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xanswer JSON;
+	DECLARE xyear INTEGER;
+	DECLARE xqtranz INTEGER;
+ BEGIN
+ xyear := (param::jsonb ->> 'year')::integer;
+ xqtranz := (param::jsonb ->> 'qtranz')::integer;
+ SELECT answer INTO xanswer FROM reports.payment WHERE "year" = xyear AND qtranz = xqtranz;
+ xanswer := xanswer::jsonb || jsonb_build_object('ekassa',ans_client);
+ UPDATE reports.payment SET answer = xanswer WHERE "year" = xyear AND qtranz = xqtranz;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_array(varchar);
+
+CREATE OR REPLACE FUNCTION ekassa.f_array(xarray character varying)
+ RETURNS character varying
+ LANGUAGE plpython3u
+AS $function$
+import json
+import hashlib
+		
+x_array = xarray[0]		
+		
+		
+return x_array
+  $function$
+;
+
+-- DROP FUNCTION ekassa.f_businessru_callback(json);
+
+CREATE OR REPLACE FUNCTION ekassa.f_businessru_callback(x_json_clbk json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xqtranz VARCHAR;
+	DECLARE xid_order VARCHAR;
+	DECLARE xcheck_url VARCHAR;
+	DECLARE xyear INTEGER;
+	DECLARE xurl_callback VARCHAR;
+	DECLARE xid_callback VARCHAR DEFAULT 'fiskal_check';
+	DECLARE xclient_clbk JSON;
+BEGIN
+	xqtranz := x_json_clbk::jsonb ->> 'c_num';
+	xcheck_url := x_json_clbk::jsonb ->> 'receipt_url';
+	xcheck_url := replace(xcheck_url,'\','');
+	SELECT data_json ->> 'url_callback',"year" INTO xurl_callback,xyear FROM reports.payment WHERE qtranz::text = xqtranz;
+	SELECT data_check ->> 'id_order' INTO xid_order FROM ekassa.ekassa_check WHERE qtranz_payment::text = xqtranz;
+	UPDATE ekassa.ekassa_check SET call_back = x_json_clbk WHERE qtranz_payment = xqtranz::integer; 
+	xclient_clbk := jsonb_build_object('url_callback',xurl_callback,'client',
+	jsonb_build_object('id_callback',xid_callback,'id_order',xid_order,'fiskal_url',xcheck_url),
+	'answer',jsonb_build_object('bill',true,'qtranz',xqtranz,'year',xyear));
+	RETURN xclient_clbk;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_check_businessru(int4);
+
+CREATE OR REPLACE FUNCTION ekassa.f_check_businessru(xid integer)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+	xquery_check JSON;
+	xdata_check JSON;
+	xcommand JSON;
+	xproducts JSON;
+	xgoods JSON;
+	xgoods_array JSON;
+	xagent_data JSON;
+	xresult_goods JSON DEFAULT '[]';
+	xquery_kassa VARCHAR;
+	xsecret VARCHAR;
+  xidorder VARCHAR;
+	xcheck_url VARCHAR;
+	xanswer VARCHAR;
+	xhash VARCHAR;
+	xnonce VARCHAR;
+	xprincipal VARCHAR;
+	xphone_customer VARCHAR;
+	xphone VARCHAR;
+	xid_phone_agent VARCHAR;
+	xprodtype VARCHAR;
+	xinn VARCHAR;
+	xemail VARCHAR;
+	xname VARCHAR;
+	xname_prod VARCHAR;
+	xtoken VARCHAR;
+	xparam VARCHAR;
+	xcomission VARCHAR;
+	xerr VARCHAR DEFAULT 'dublicate qtranz';
+	xratio NUMERIC (3,2);
+	xmerch INTEGER;
+	xsupplier INTEGER;
+	xlength_array INTEGER;
+	xidpayment INTEGER;
+	xcontragent INTEGER;
+	xekassa INTEGER;
+	xid_ekassa INTEGER;
+	xcount_prod INTEGER;
+	xcount_agent INTEGER;
+	xyear INTEGER;
+	i INTEGER;
+	xamount float;
+	xcomiss_amount float;
+	xprice_prod float;
+	xamount_prod float;
+	xagent BOOLEAN;
+	BEGIN
+		SELECT MD5(RANDOM()::text) INTO xnonce;
+		xidpayment = xid;
+		xyear := (LEFT(common.f_timestamp(),4))::integer;
+		SELECT LEFT(data_json ->> 'principal',6),
+					 data_json ->> 'phone_customer',
+					 data_json ->> 'email_customer',
+					 (data_json ->> 'amount')::float,
+					 data_json -> 'products',
+					 data_json ->> 'id_order',
+					 e_kassa #>> '{ecassa,0}'
+		INTO xprincipal,xphone_customer,xemail,xamount,xproducts,xidorder,xekassa 
+		FROM reports.payment WHERE qtranz = xidpayment;
+		xlength_array := jsonb_array_length(xproducts::jsonb);
+		xdata_check := jsonb_build_object('ecassa',xekassa,'id_order',xidorder);
+		SELECT json_settings ->> 'sec',json_settings ->> 'token',json_settings ->> 'PutCheckUrl',json_settings -> 'PutCheck',json_settings -> 'PutCheck' -> 'command' -> 'goods' 
+		INTO xsecret,xtoken,xcheck_url,xquery_check,xgoods_array FROM ekassa.ekassa WHERE id_kass = xekassa;
+		SELECT contragent,ekassa ->> 'agent',ekassa ->> 'item_type',ekassa -> 'comiss_agent' ->> 'comission',merchant 
+		INTO xcontragent,xagent,xprodtype,xcomission,xmerch FROM mytosb.contracts WHERE firmservice = xprincipal;
+		SELECT fljson_firm ->> 'upcomission' INTO xcomiss_amount FROM common.firmservice WHERE idfirm = xprincipal;
+		SELECT (accesuaries ->> 'format_amount')::numeric(3,2) INTO xratio FROM common.merchant WHERE idmerch = xmerch;
+		xamount := (xamount::numeric(10,2) * xratio)::NUMERIC(10,2);
+		FOR i IN 1..xlength_array LOOP
+			xcount_prod := xproducts::jsonb -> i-1 ->> 'count';
+			xprice_prod := xproducts::jsonb -> i-1 ->> 'price';
+			xprice_prod := (xprice_prod * xratio::numeric(3,2))::float;
+			xname_prod := xproducts::jsonb -> i-1 ->> 'name_prod';
+			xamount_prod := xproducts::jsonb -> i-1 ->> 'amount_prod';
+			xamount_prod := (xamount_prod::numeric(10,2) * xratio::numeric(3,2))::float;
+			IF xagent = TRUE THEN
+				xid_phone_agent := xproducts::jsonb -> i-1 ->> 'supplier_phone';
+				SELECT COUNT(contragent) INTO xcount_agent FROM mytosb.contracts WHERE login_phone = xid_phone_agent and merchant = xmerch;
+				IF xcount_agent = 0 THEN 
+					SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE firmservice = xprincipal;
+				ELSE
+					SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE login_phone = xid_phone_agent;
+				END IF;
+				SELECT fljson_privilege ->> 'inn',
+						   fljson_privilege ->> 'phone',
+					     fljson_privilege ->> 'name'
+		    INTO xinn,xphone,xname FROM "user".users WHERE idpriv = xsupplier;
+				xagent_data := jsonb_build_object('type',32,'supplier_inn',xinn,'supplier_name',xname,'supplier_phone',xphone);
+				xgoods := xgoods_array::jsonb -> 0; 
+			  xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				xgoods := xgoods::jsonb || 
+				jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype,'agent_info',xagent_data);  
+		  ELSE
+				xgoods := xgoods_array::jsonb -> 0;
+				xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				xgoods := xgoods::jsonb || 
+				jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype);
+			END IF;
+			xresult_goods := xresult_goods::jsonb || xgoods::jsonb;
+		END LOOP; 
+		xcomiss_amount := ((xamount - (xamount / (1 + xcomiss_amount)))::numeric(10,2))::float;
+		xgoods_array := (xgoods_array::jsonb -> 0) - 'agent_info' - 'sum' - 'name' - 'count' - 'price' - 'item_type';
+		xgoods_array := xgoods_array::jsonb || jsonb_build_object('sum',xcomiss_amount,'name',xcomission,'count',1,'price',xcomiss_amount,'item_type',4);
+		xresult_goods := xresult_goods::jsonb || xgoods_array::jsonb;
+		xcommand := ((xquery_check -> 'command')::jsonb - 'goods' - 'c_num' - 'payed_cashless') || 
+		jsonb_build_object('goods',xresult_goods::jsonb,'c_num',xidpayment,'payed_cashless',xamount);
+		IF xemail IS NOT NULL THEN
+			xcommand := xcommand::jsonb - 'smsEmail54FZ' || jsonb_build_object('smsEmail54FZ',xemail); 
+		END IF;
+		xquery_check := xquery_check::jsonb - 'command' || jsonb_build_object('nonce',xnonce,'token',xtoken,'command',xcommand::jsonb);
+		xanswer := ekassa.f_sort_json(xquery_check,xsecret);
+		xparam := SPLIT_PART(xanswer, '~&~', 1);
+		xhash := SPLIT_PART(xanswer, '~&~', 2);
+		xquery_kassa := json_build_object('check_url',xcheck_url,'hash',xhash);
+	  xquery_kassa := ekassa.f_pt_json(xquery_kassa,xparam);
+		BEGIN	
+            ---xquery_kassa := xquery_kassa::jsonb; 
+			INSERT INTO ekassa.ekassa_check (query_check2,year,data_check,qtranz_payment) VALUES (xquery_kassa,xyear,xdata_check,xidpayment) RETURNING id_ekassa INTO xid_ekassa; 
+			EXCEPTION WHEN unique_violation THEN
+				xquery_kassa := jsonb_build_object('err',1,'ans',xerr);
+			RETURN xcomiss_amount;
+		END;
+		UPDATE reports.payment SET ekassa_id = 1 WHERE qtranz = xidpayment; 
+	RETURN xquery_kassa;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_check_businessru_old(int4);
+
+CREATE OR REPLACE FUNCTION ekassa.f_check_businessru_old(xid integer)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xquery_check JSON;
+	DECLARE xquery_kassa JSON;
+	DECLARE xdata_check JSON;
+	DECLARE xcommand JSON;
+	DECLARE xproducts JSON;
+	DECLARE xgoods JSON;
+	DECLARE xgoods_array JSON;
+	DECLARE xagent_data JSON;
+	DECLARE xresult_goods JSON DEFAULT '[]';
+	DECLARE xsecret VARCHAR;
+	DECLARE xidorder VARCHAR;
+	DECLARE xcheck_url VARCHAR;
+	DECLARE xanswer VARCHAR;
+	DECLARE xhash VARCHAR;
+	DECLARE xnonce VARCHAR;
+	DECLARE xprincipal VARCHAR;
+	DECLARE xphone_customer VARCHAR;
+	DECLARE xphone VARCHAR;
+	DECLARE xid_phone_agent VARCHAR;
+	DECLARE xprodtype VARCHAR;
+	DECLARE xinn VARCHAR;
+	DECLARE xemail VARCHAR;
+	DECLARE xname VARCHAR;
+	DECLARE xname_prod VARCHAR;
+	DECLARE xtoken VARCHAR;
+	DECLARE xparam VARCHAR;
+	DECLARE xcomission VARCHAR;
+	DECLARE xerr VARCHAR DEFAULT 'dublicate qtranz';
+	DECLARE xratio NUMERIC (3,2);
+	DECLARE xmerch INTEGER;
+	DECLARE xsupplier INTEGER;
+	DECLARE xlength_array INTEGER;
+	DECLARE xidpayment INTEGER;
+	DECLARE xcontragent INTEGER;
+	DECLARE xekassa INTEGER;
+	DECLARE xid_ekassa INTEGER;
+	DECLARE xcount_prod INTEGER;
+	DECLARE xcount_agent INTEGER;
+	DECLARE xyear INTEGER;
+	DECLARE i INTEGER;
+	DECLARE xamount float;
+	DECLARE xcomiss_amount float;
+	DECLARE xprice_prod float;
+	DECLARE xamount_prod float;
+	DECLARE xagent BOOLEAN;
+	BEGIN
+		SELECT MD5(RANDOM()::text) INTO xnonce;
+		xidpayment = xid;
+		xyear := (LEFT(common.f_timestamp(),4))::integer;
+		SELECT LEFT(data_json ->> 'principal',6),
+					 data_json ->> 'phone_customer',
+					 data_json ->> 'email_customer',
+					 (data_json ->> 'amount')::float,
+					 data_json -> 'products',
+					 data_json ->> 'id_order',
+					 e_kassa #>> '{ecassa,0}'
+		INTO xprincipal,xphone_customer,xemail,xamount,xproducts,xidorder,xekassa 
+		FROM reports.payment WHERE qtranz = xidpayment;
+		xlength_array := jsonb_array_length(xproducts::jsonb);
+		xdata_check := jsonb_build_object('ecassa',xekassa,'id_order',xidorder);
+		SELECT json_settings ->> 'sec',json_settings ->> 'token',json_settings ->> 'PutCheckUrl',json_settings -> 'PutCheck',json_settings -> 'PutCheck' -> 'command' -> 'goods' 
+		INTO xsecret,xtoken,xcheck_url,xquery_check,xgoods_array FROM ekassa.ekassa WHERE id_kass = xekassa;
+		SELECT contragent,ekassa ->> 'agent',ekassa ->> 'item_type',ekassa -> 'comiss_agent' ->> 'comission',merchant 
+		INTO xcontragent,xagent,xprodtype,xcomission,xmerch FROM mytosb.contracts WHERE firmservice = xprincipal;
+		SELECT fljson_firm ->> 'upcomission' INTO xcomiss_amount FROM common.firmservice WHERE idfirm = xprincipal;
+		SELECT (accesuaries ->> 'format_amount')::numeric(3,2) INTO xratio FROM common.merchant WHERE idmerch = xmerch;
+		xamount := (xamount::numeric(10,2) * xratio)::NUMERIC(10,2);
+		FOR i IN 1..xlength_array LOOP
+			xcount_prod := xproducts::jsonb -> i-1 ->> 'count';
+			xprice_prod := xproducts::jsonb -> i-1 ->> 'price';
+			xprice_prod := (xprice_prod * xratio::numeric(3,2))::float;
+			xname_prod := xproducts::jsonb -> i-1 ->> 'name_prod';
+			xamount_prod := xproducts::jsonb -> i-1 ->> 'amount_prod';
+			xamount_prod := (xamount_prod::numeric(10,2) * xratio::numeric(3,2))::float;
+			IF xagent = TRUE THEN
+				xid_phone_agent := xproducts::jsonb -> i-1 ->> 'supplier_phone';
+				SELECT COUNT(contragent) INTO xcount_agent FROM mytosb.contracts WHERE login_phone = xid_phone_agent and merchant = xmerch;
+				IF xcount_agent = 0 THEN 
+					SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE firmservice = xprincipal;
+				ELSE
+					SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE login_phone = xid_phone_agent;
+				END IF;
+				SELECT fljson_privilege ->> 'inn',
+						   fljson_privilege ->> 'phone',
+					     fljson_privilege ->> 'name'
+		    INTO xinn,xphone,xname FROM "user".users WHERE idpriv = xsupplier;
+				xagent_data := jsonb_build_object('type',32,'supplier_inn',xinn,'supplier_name',xname,'supplier_phone',xphone);
+				xgoods := xgoods_array::jsonb -> 0; 
+			  xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				xgoods := xgoods::jsonb || 
+				jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype,'agent_info',xagent_data);  
+		  ELSE
+				xgoods := xgoods_array::jsonb -> 0;
+				xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				xgoods := xgoods::jsonb || 
+				jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype);
+			END IF;
+			xresult_goods := xresult_goods::jsonb || xgoods::jsonb;
+		END LOOP; 
+		xcomiss_amount := ((xamount - (xamount / (1 + xcomiss_amount)))::numeric(10,2))::float;
+		xgoods_array := (xgoods_array::jsonb -> 0) - 'agent_info' - 'sum' - 'name' - 'count' - 'price' - 'item_type';
+		xgoods_array := xgoods_array::jsonb || jsonb_build_object('sum',xcomiss_amount,'name',xcomission,'count',1,'price',xcomiss_amount,'item_type',4);
+		xresult_goods := xresult_goods::jsonb || xgoods_array::jsonb;
+		xcommand := ((xquery_check -> 'command')::jsonb - 'goods' - 'c_num' - 'payed_cashless') || 
+		jsonb_build_object('goods',xresult_goods::jsonb,'c_num',xidpayment,'payed_cashless',xamount);
+		IF xemail IS NOT NULL THEN
+			xcommand := xcommand::jsonb - 'smsEmail54FZ' || jsonb_build_object('smsEmail54FZ',xemail); 
+		END IF;
+		xquery_check := xquery_check::jsonb - 'command' || jsonb_build_object('nonce',xnonce,'token',xtoken,'command',xcommand::jsonb);
+		xanswer := ekassa.f_sort_json(xquery_check,xsecret);
+		xparam := SPLIT_PART(xanswer, '~&~', 1);
+		xhash := SPLIT_PART(xanswer, '~&~', 2);
+		xquery_kassa := json_build_object('check_url',xcheck_url,'hash',xhash);
+		xquery_kassa := json_build_array(xquery_kassa,xparam);
+		BEGIN	
+			INSERT INTO ekassa.ekassa_check (query_check,year,data_check,qtranz_payment) VALUES (xquery_kassa,xyear,xdata_check,xidpayment) RETURNING id_ekassa INTO xid_ekassa; 
+			EXCEPTION WHEN unique_violation THEN
+				xquery_kassa := jsonb_build_object('err',1,'ans',xerr);
+			RETURN xcomiss_amount;
+		END;
+		UPDATE reports.payment SET ekassa_id = 1 WHERE qtranz = xidpayment; 
+	RETURN xquery_kassa;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_check_businessru_test(int4);
+
+CREATE OR REPLACE FUNCTION ekassa.f_check_businessru_test(xid integer)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xquery_check JSON;
+	--DECLARE xquery_kassa JSON;
+    DECLARE xquery_kassa VARCHAR;
+	DECLARE xdata_check JSON;
+	DECLARE xcommand JSON;
+	DECLARE xproducts JSON;
+	DECLARE xgoods JSON;
+	DECLARE xgoods_array JSON;
+	DECLARE xagent_data JSON;
+	DECLARE xresult_goods JSON DEFAULT '[]';
+	DECLARE xsecret VARCHAR;
+	DECLARE xidorder VARCHAR;
+	DECLARE xcheck_url VARCHAR;
+	DECLARE xanswer VARCHAR;
+	DECLARE xhash VARCHAR;
+	DECLARE xnonce VARCHAR;
+	DECLARE xprincipal VARCHAR;
+	DECLARE xphone_customer VARCHAR;
+	DECLARE xphone VARCHAR;
+	DECLARE xid_phone_agent VARCHAR;
+	DECLARE xprodtype VARCHAR;
+	DECLARE xinn VARCHAR;
+	DECLARE xemail VARCHAR;
+	DECLARE xname VARCHAR;
+	DECLARE xname_prod VARCHAR;
+	DECLARE xtoken VARCHAR;
+	DECLARE xparam VARCHAR;
+	DECLARE xcomission VARCHAR;
+	DECLARE xerr VARCHAR DEFAULT 'dublicate qtranz';
+	DECLARE xratio NUMERIC (3,2);
+	DECLARE xmerch INTEGER;
+	DECLARE xsupplier INTEGER;
+	DECLARE xlength_array INTEGER;
+	DECLARE xidpayment INTEGER;
+	DECLARE xcontragent INTEGER;
+	DECLARE xekassa INTEGER;
+	DECLARE xid_ekassa INTEGER;
+	DECLARE xcount_prod INTEGER;
+	DECLARE xcount_agent INTEGER;
+	DECLARE xyear INTEGER;
+	DECLARE i INTEGER;
+	DECLARE xamount float;
+	DECLARE xcomiss_amount float;
+	DECLARE xprice_prod float;
+	DECLARE xamount_prod float;
+	DECLARE xagent BOOLEAN;
+	BEGIN
+		SELECT MD5(RANDOM()::text) INTO xnonce;
+		xidpayment = xid;
+		xyear := (LEFT(common.f_timestamp(),4))::integer;
+		SELECT LEFT(data_json ->> 'principal',6),
+					 data_json ->> 'phone_customer',
+					 data_json ->> 'email_customer',
+					 (data_json ->> 'amount')::float,
+					 data_json -> 'products',
+					 data_json ->> 'id_order',
+					 e_kassa #>> '{ecassa,0}'
+		INTO xprincipal,xphone_customer,xemail,xamount,xproducts,xidorder,xekassa 
+		FROM reports.payment WHERE qtranz = xidpayment;
+		xlength_array := jsonb_array_length(xproducts::jsonb);
+		xdata_check := jsonb_build_object('ecassa',xekassa,'id_order',xidorder);
+		SELECT json_settings ->> 'sec',json_settings ->> 'token',json_settings ->> 'PutCheckUrl',json_settings -> 'PutCheck',json_settings -> 'PutCheck' -> 'command' -> 'goods' 
+		INTO xsecret,xtoken,xcheck_url,xquery_check,xgoods_array FROM ekassa.ekassa WHERE id_kass = xekassa;
+		--SELECT contragent,ekassa ->> 'agent',ekassa ->> 'item_type',ekassa -> 'comiss_agent' ->> 'comission',merchant 
+		--INTO xcontragent,xagent,xprodtype,xcomission,xmerch FROM mytosb.contracts WHERE firmservice = xprincipal;
+		--SELECT fljson_firm ->> 'upcomission' INTO xcomiss_amount FROM common.firmservice WHERE idfirm = xprincipal;
+		--SELECT (accesuaries ->> 'format_amount')::numeric(3,2) INTO xratio FROM common.merchant WHERE idmerch = xmerch;
+		--xamount := (xamount::numeric(10,2) * xratio)::NUMERIC(10,2);
+		--FOR i IN 1..xlength_array LOOP
+			--xcount_prod := xproducts::jsonb -> i-1 ->> 'count';
+			--xprice_prod := xproducts::jsonb -> i-1 ->> 'price';
+			--xprice_prod := (xprice_prod * xratio::numeric(3,2))::float;
+			--xname_prod := xproducts::jsonb -> i-1 ->> 'name_prod';
+			--xamount_prod := xproducts::jsonb -> i-1 ->> 'amount_prod';
+			--xamount_prod := (xamount_prod::numeric(10,2) * xratio::numeric(3,2))::float;
+			--IF xagent = TRUE THEN
+				--xid_phone_agent := xproducts::jsonb -> i-1 ->> 'supplier_phone';
+				--SELECT COUNT(contragent) INTO xcount_agent FROM mytosb.contracts WHERE login_phone = xid_phone_agent and merchant = xmerch;
+				--IF xcount_agent = 0 THEN 
+					--SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE firmservice = xprincipal;
+				--ELSE
+					--SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE login_phone = xid_phone_agent;
+				--END IF;
+				--SELECT fljson_privilege ->> 'inn',
+						   --fljson_privilege ->> 'phone',
+					     --fljson_privilege ->> 'name'
+		    --INTO xinn,xphone,xname FROM "user".users WHERE idpriv = xsupplier;
+				--xagent_data := jsonb_build_object('type',32,'supplier_inn',xinn,'supplier_name',xname,'supplier_phone',xphone);
+				--xgoods := xgoods_array::jsonb -> 0; 
+			  --xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				--xgoods := xgoods::jsonb || 
+				--jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype,'agent_info',xagent_data);  
+		  --ELSE
+				--xgoods := xgoods_array::jsonb -> 0;
+				--xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				--xgoods := xgoods::jsonb || 
+				--jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype);
+			--END IF;
+			--xresult_goods := xresult_goods::jsonb || xgoods::jsonb;
+		--END LOOP; 
+		--xcomiss_amount := ((xamount - (xamount / (1 + xcomiss_amount)))::numeric(10,2))::float;
+		--xgoods_array := (xgoods_array::jsonb -> 0) - 'agent_info' - 'sum' - 'name' - 'count' - 'price' - 'item_type';
+		--xgoods_array := xgoods_array::jsonb || jsonb_build_object('sum',xcomiss_amount,'name',xcomission,'count',1,'price',xcomiss_amount,'item_type',4);
+		--xresult_goods := xresult_goods::jsonb || xgoods_array::jsonb;
+		--xcommand := ((xquery_check -> 'command')::jsonb - 'goods' - 'c_num' - 'payed_cashless') || 
+		--jsonb_build_object('goods',xresult_goods::jsonb,'c_num',xidpayment,'payed_cashless',xamount);
+		--IF xemail IS NOT NULL THEN
+			--xcommand := xcommand::jsonb - 'smsEmail54FZ' || jsonb_build_object('smsEmail54FZ',xemail); 
+		--END IF;
+		--xquery_check := xquery_check::jsonb - 'command' || jsonb_build_object('nonce',xnonce,'token',xtoken,'command',xcommand::jsonb);
+		--xanswer := ekassa.f_sort_json(xquery_check,xsecret);
+		--xparam := SPLIT_PART(xanswer, '~&~', 1);
+		--xhash := SPLIT_PART(xanswer, '~&~', 2);
+		--xquery_kassa := json_build_object('check_url',xcheck_url,'hash',xhash);
+	    --xquery_kassa := ekassa.f_pt_json(xquery_kassa,xparam);
+        --xquery_kassa := xquery_kassa::jsonb || xparam::jsonb;
+	    --xquery_kassa := jsonb_build_object('xcassa',json_build_object('check_url',xcheck_url,'hash',xhash), 'xparam', xparam::jsonb);
+	    --xquery_kassa := json_build_array(xquery_kassa,xparam);
+		--BEGIN	
+		--	INSERT INTO ekassa.ekassa_check (query_check,year,data_check,qtranz_payment) VALUES (xquery_kassa,xyear,xdata_check,xidpayment) RETURNING id_ekassa INTO xid_ekassa; 
+		--	EXCEPTION WHEN unique_violation THEN
+		--		xquery_kassa := jsonb_build_object('err',1,'ans',xerr);
+		--	RETURN xcomiss_amount;
+		--END;
+		--UPDATE reports.payment SET ekassa_id = 1 WHERE qtranz = xidpayment; 
+	RETURN xgoods_array;
+	--return xanswer;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_business_cron();
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_business_cron()
+ RETURNS SETOF integer
+ LANGUAGE plpgsql
+ ROWS 100
+AS $function$
+	BEGIN
+	 RETURN QUERY SELECT qtranz FROM reports.payment WHERE ekassa_id = 0 AND (now() - interval '60 SECOND') >= "datetime";
+	RETURN;
+	END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_businessru_answer(json, int8);
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_businessru_answer(xjson json, xid bigint)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xqtranz INTEGER;
+	BEGIN
+  UPDATE ekassa.ekassa_check SET ans_ekassa = xjson::jsonb WHERE qtranz_payment = xid;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_businessru_count_err();
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_businessru_count_err()
+ RETURNS integer
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xcount INTEGER;
+	BEGIN
+  SELECT COUNT(ekassa_id) INTO xcount FROM reports.payment WHERE ekassa_id = 0 AND (now() - interval '60 SECOND') >= "datetime";
+	RETURN xcount;
+END
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_businessru_getcheck(out json);
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_businessru_getcheck(OUT xdata json)
+ RETURNS SETOF json
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    RETURN QUERY SELECT json_build_object('qtranz',doc_ekassa_businessru.id,'json_data',doc_ekassa_businessru.json_data)
+     FROM doc_ekassa_businessru  WHERE doc_ekassa_businessru.status::text = 'new'::text;
+    RETURN;
+ END;
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_businessru_jdata(json, int4, json);
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_businessru_jdata(xjson json, xxid integer, xtoken json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+		DECLARE xappid VARCHAR;
+		DECLARE xsec VARCHAR;
+		DECLARE xemail VARCHAR DEFAULT '';
+		DECLARE xphone VARCHAR DEFAULT '';
+    DECLARE xekass INTEGER DEFAULT 2;
+		DECLARE xamount VARCHAR;
+		DECLARE x_token VARCHAR;
+		DECLARE xnonce VARCHAR;
+		DECLARE xorder VARCHAR;
+    DECLARE xprice VARCHAR;
+		DECLARE xcheck JSON;
+		DECLARE xsecret JSON;
+BEGIN
+		SELECT json_settings ->> 'PutCheck',json_settings ->> 'appid',json_settings ->> 'sec'
+		INTO xcheck,xappid,xsec FROM ekassa.ekassa WHERE id_kass = xekass;
+    xemail := xjson::jsonb ->> 'email';
+    xphone := xjson::jsonb ->> 'phone';
+    xamount := xjson::jsonb ->> 'amount';
+    x_token := xtoken::jsonb ->> 'token';
+		xnonce := md5(random()::text);
+    xorder := xxid;
+    --xcheck := REPLACE(xcheck::json, '@mail', xemail);
+    --xcheck := REPLACE(xcheck , '@appid', xappid);
+		xcheck := jsonb_set(xcheck::jsonb,'{app_id}',xappid::jsonb,FALSE);
+		--xcheck := jsonb_set(xcheck::jsonb,'{command,smsEmail54FZ}',xemail::jsonb,FALSE);
+    xcheck := jsonb_set(xcheck::jsonb,'{command,c_num}',xorder::jsonb,FALSE);
+    xcheck := jsonb_set(xcheck::jsonb,'{command,goods,0,sum}',xamount::jsonb,FALSE);
+    xcheck := jsonb_set(xcheck::jsonb,'{command,goods,0,price}',xamount::jsonb,FALSE);
+    xcheck := jsonb_set(xcheck::jsonb,'{command,payed_cashless}',xamount::jsonb,FALSE);
+    xsecret := json_build_object('token', x_token, 'nonce', xnonce, 'xsec', xsec);
+    --xcheck := xcheck::jsonb || x_token::jsonb;
+    RETURN xcheck;
+END;
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_businessru_put_token(json);
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_businessru_put_token(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xekassa  INTEGER DEFAULT 2;
+	DECLARE yjson JSON;
+	DECLARE zjson JSON;
+	DECLARE xtoken VARCHAR;
+BEGIN
+		xtoken := x_json::jsonb ->> 'token';
+		SELECT json_settings - 'token' INTO zjson FROM ekassa.ekassa WHERE id_kass  = xekassa;
+		yjson := jsonb_build_object('token',xtoken) || zjson::jsonb;
+    UPDATE ekassa.ekassa SET json_settings = yjson WHERE id_kass  = xekassa;
+		RETURN yjson;
+END;
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_ekassa_businessru_sign_token();
+
+CREATE OR REPLACE FUNCTION ekassa.f_ekassa_businessru_sign_token()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xekass INTEGER DEFAULT 2;
+    DECLARE xnonce VARCHAR;
+    DECLARE xappid VARCHAR;
+    DECLARE xsec VARCHAR;
+    DECLARE xmass VARCHAR;
+    DECLARE xanswer JSON;
+    DECLARE xmd5 VARCHAR;
+    DECLARE xurl VARCHAR;
+    DECLARE xputurl VARCHAR; 
+BEGIN
+		xnonce := MD5(random()::text);
+    SELECT json_settings ->> 'appid',json_settings ->> 'sec',json_settings ->> 'GetTokenUrl',json_settings ->> 'PutCheckUrl' 
+		INTO xappid,xsec,xurl,xputurl FROM ekassa.ekassa WHERE id_kass = xekass;
+		xmass := json_build_object('app_id', xappid, 'nonce', xnonce);
+		xmd5 := MD5(REPLACE(json_build_object('app_id', xappid, 'nonce', xnonce)::text,' ','') || xsec);
+		xanswer := json_build_object('params',xmass::json,'headers',json_build_object('Accept','application/json','sign',xmd5),'url',xurl,'chekurl',xputurl);
+	  --Записать в таблицу buisinessru_timestamp
+		RETURN xanswer;
+END;
+$function$
+;
+
+-- DROP FUNCTION ekassa.f_pt_json(bpchar, bpchar);
+
+CREATE OR REPLACE FUNCTION ekassa.f_pt_json(xjson character, xparam character)
+ RETURNS character varying
+ LANGUAGE plpython3u
+AS $function$
+		import json
+		
+		x_json = json.loads(xjson)
+		x_json = dict(sorted(x_json.items()))
+		x_json = str(xjson)
+		x_json = x_json + "~&~" + xparam
+		return x_json
+  $function$
+;
+
+-- DROP FUNCTION ekassa.f_sort_json(json, bpchar);
+
+CREATE OR REPLACE FUNCTION ekassa.f_sort_json(xjson json, xsecret character)
+ RETURNS character varying
+ LANGUAGE plpython3u
+AS $function$
+		import json
+		import hashlib
+		#import urllib.parse
+		
+		x_json = json.loads(xjson)
+		x_json = dict(sorted(x_json.items()))
+		x_json = str(x_json)
+		x_json = x_json.replace('\'','\"')
+		x_json = x_json.replace(': ',':')
+		x_json = x_json.replace(', ',',')
+		x_json = x_json.replace('True','true')
+		#x_json = x_json.replace('://',':\/\/')
+		y_json = x_json + xsecret
+		sign_query = hashlib.md5(y_json.encode())
+		sign_query = sign_query.hexdigest()
+		#sign_query = urllib.parse.urlencode(y_json)
+		x_json = x_json + "~&~" + sign_query
+		return x_json
+  $function$
+;
+
+-- DROP FUNCTION ekassa.f_sort_json_copy(json, bpchar);
+
+CREATE OR REPLACE FUNCTION ekassa.f_sort_json_copy(xjson json, xsecret character)
+ RETURNS character varying
+ LANGUAGE plpython3u
+AS $function$
+		import json
+		import hashlib
+		#import urllib.parse
+		
+		x_json = json.loads(xjson)
+		x_json = dict(sorted(x_json.items()))
+		x_json = str(x_json)
+		x_json = x_json.replace('\'','\"')
+		x_json = x_json.replace(': ',':')
+		x_json = x_json.replace(', ',',')
+		x_json = x_json.replace('True','true')
+		x_json = x_json.replace('://',':\/\/')
+		y_json = x_json + xsecret
+		sign_query = hashlib.md5(y_json.encode())
+		sign_query = sign_query.hexdigest()
+		#sign_query = urllib.parse.urlencode(y_json)
+		x_json = x_json + "~&~" + sign_query
+		return x_json
+  $function$
+;
+
+-- DROP FUNCTION ekassa.f_test(int4);
+
+CREATE OR REPLACE FUNCTION ekassa.f_test(xid integer)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xquery_check JSON;
+	DECLARE xquery_kassa JSON;
+	DECLARE xdata_check JSON;
+	DECLARE xcommand JSON;
+	DECLARE xproducts JSON;
+	DECLARE xgoods JSON;
+	DECLARE xgoods_array JSON;
+	DECLARE xagent_data JSON;
+	DECLARE xresult_goods JSON DEFAULT '[]';
+	DECLARE xsecret VARCHAR;
+	DECLARE xidorder VARCHAR;
+	DECLARE xcheck_url VARCHAR;
+	DECLARE xanswer VARCHAR;
+	DECLARE xhash VARCHAR;
+	DECLARE xnonce VARCHAR;
+	DECLARE xprincipal VARCHAR;
+	DECLARE xphone_customer VARCHAR;
+	DECLARE xphone VARCHAR;
+	DECLARE xid_phone_agent VARCHAR;
+	DECLARE xprodtype VARCHAR;
+	DECLARE xinn VARCHAR;
+	DECLARE xemail VARCHAR;
+	DECLARE xname VARCHAR;
+	DECLARE xname_prod VARCHAR;
+	DECLARE xtoken VARCHAR;
+	DECLARE xparam VARCHAR;
+	DECLARE xcomission VARCHAR;
+	DECLARE xerr VARCHAR DEFAULT 'dublicate qtranz';
+	DECLARE xratio NUMERIC (3,2);
+	DECLARE xmerch INTEGER;
+	DECLARE xsupplier INTEGER;
+	DECLARE xlength_array INTEGER;
+	DECLARE xidpayment INTEGER;
+	DECLARE xcontragent INTEGER;
+	DECLARE xekassa INTEGER;
+	DECLARE xid_ekassa INTEGER;
+	DECLARE xcount_prod INTEGER;
+	DECLARE xcount_agent INTEGER;
+	DECLARE xyear INTEGER;
+	DECLARE i INTEGER;
+	DECLARE xamount float;
+	DECLARE xcomiss_amount float;
+	DECLARE xprice_prod float;
+	DECLARE xamount_prod float;
+	DECLARE xagent BOOLEAN;
+	BEGIN
+		SELECT MD5(RANDOM()::text) INTO xnonce;
+		xidpayment = xid;
+		xyear := (LEFT(common.f_timestamp(),4))::integer;
+		SELECT LEFT(data_json ->> 'principal',6),
+					 data_json ->> 'phone_customer',
+					 data_json ->> 'email_customer',
+					 (data_json ->> 'amount')::float,
+					 data_json -> 'products',
+					 data_json ->> 'id_order',
+					 e_kassa #>> '{ecassa,0}'
+		INTO xprincipal,xphone_customer,xemail,xamount,xproducts,xidorder,xekassa 
+		FROM reports.payment WHERE qtranz = xidpayment;
+		xlength_array := jsonb_array_length(xproducts::jsonb);
+		xdata_check := jsonb_build_object('ecassa',xekassa,'id_order',xidorder);
+		SELECT json_settings ->> 'sec',json_settings ->> 'token',json_settings ->> 'PutCheckUrl',json_settings -> 'PutCheck',
+		json_settings -> 'PutCheck' -> 'command' -> 'goods' 
+		INTO xsecret,xtoken,xcheck_url,xquery_check,xgoods_array FROM ekassa.ekassa WHERE id_kass = xekassa;
+		SELECT contragent,ekassa ->> 'agent',ekassa ->> 'item_type',ekassa -> 'comiss_agent' ->> 'comission',merchant 
+		INTO xcontragent,xagent,xprodtype,xcomission,xmerch FROM mytosb.contracts WHERE firmservice = xprincipal;
+		SELECT fljson_firm ->> 'upcomission' INTO xcomiss_amount FROM common.firmservice WHERE idfirm = xprincipal;
+		SELECT (accesuaries ->> 'format_amount')::numeric(3,2) INTO xratio FROM common.merchant WHERE idmerch = xmerch;
+		xamount := (xamount::numeric(10,2) * xratio)::NUMERIC(10,2);
+		FOR i IN 1..xlength_array LOOP
+			xcount_prod := xproducts::jsonb -> i-1 ->> 'count';
+			xprice_prod := xproducts::jsonb -> i-1 ->> 'price';
+			xprice_prod := (xprice_prod * xratio::numeric(3,2))::float;
+			xname_prod := xproducts::jsonb -> i-1 ->> 'name_prod';
+			xamount_prod := xproducts::jsonb -> i-1 ->> 'amount_prod';
+			xamount_prod := (xamount_prod::numeric(10,2) * xratio::numeric(3,2))::float;
+			IF xagent = TRUE THEN
+				xid_phone_agent := xproducts::jsonb -> i-1 ->> 'supplier_phone';
+				SELECT COUNT(contragent) INTO xcount_agent FROM mytosb.contracts WHERE login_phone = xid_phone_agent and merchant = xmerch;
+				IF xcount_agent = 0 THEN 
+					SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE firmservice = xprincipal;
+				ELSE
+					SELECT contragent INTO xsupplier FROM mytosb.contracts WHERE login_phone = xid_phone_agent;
+				END IF;
+				
+				SELECT fljson_privilege ->> 'inn',
+						   fljson_privilege ->> 'phone',
+					     fljson_privilege ->> 'name'
+		    INTO xinn,xphone,xname FROM "user".users WHERE idpriv = xsupplier;
+				
+				xagent_data := jsonb_build_object('type',32,'supplier_inn',xinn,'supplier_name',xname,'supplier_phone',xphone);
+				xgoods := xgoods_array::jsonb -> 0; 
+			  xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				xgoods := xgoods::jsonb || 
+				jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype,'agent_info',xagent_data);  
+		  ELSE
+				xgoods := xgoods_array::jsonb -> 0;
+				xgoods := xgoods::jsonb - 'sum' - 'name' - 'count' - 'price' - 'agent_info' - 'item_type';
+				xgoods := xgoods::jsonb || 
+				jsonb_build_object('sum',xamount_prod,'name',xname_prod,'count',xcount_prod,'price',xprice_prod,'item_type',xprodtype);
+			END IF;
+			xresult_goods := xresult_goods::jsonb || xgoods::jsonb;
+		END LOOP; 
+		xcomiss_amount := ((xamount - (xamount / (1 + xcomiss_amount)))::numeric(10,2))::float;
+		xgoods_array := (xgoods_array::jsonb -> 0) - 'agent_info' - 'sum' - 'name' - 'count' - 'price' - 'item_type';
+		xgoods_array := xgoods_array::jsonb || jsonb_build_object('sum',xcomiss_amount,'name',xcomission,'count',1,'price',xcomiss_amount,'item_type',4);
+		xresult_goods := xresult_goods::jsonb || xgoods_array::jsonb;
+		xcommand := ((xquery_check -> 'command')::jsonb - 'goods' - 'c_num' - 'payed_cashless') || 
+		jsonb_build_object('goods',xresult_goods::jsonb,'c_num',xidpayment,'payed_cashless',xamount);
+		IF xemail IS NOT NULL THEN
+			xcommand := xcommand::jsonb - 'smsEmail54FZ' || jsonb_build_object('smsEmail54FZ',xemail); 
+		END IF;
+		xquery_check := xquery_check::jsonb - 'command' || jsonb_build_object('nonce',xnonce,'token',xtoken,'command',xcommand::jsonb);
+		xanswer := ekassa.f_sort_json(xquery_check,xsecret);
+		xparam := SPLIT_PART(xanswer, '~&~', 1);
+		xhash := SPLIT_PART(xanswer, '~&~', 2);
+		xquery_kassa := json_build_object('check_url',xcheck_url,'hash',xhash);
+		xquery_kassa := json_build_array(xquery_kassa,xparam);
+		BEGIN	
+			INSERT INTO ekassa.ekassa_check (query_check,year,data_check,qtranz_payment) VALUES (xquery_kassa,xyear,xdata_check,xidpayment) RETURNING id_ekassa INTO xid_ekassa; 
+			EXCEPTION WHEN unique_violation THEN
+				xquery_kassa := jsonb_build_object('err',1,'ans',xerr);
+			RETURN xresult_goods;
+		END;
+		UPDATE reports.payment SET ekassa_id = 1 WHERE qtranz = xidpayment; 
+	RETURN xquery_kassa;
+	END;
+$function$
+;
+
+-- DROP SCHEMA mytosb;
+
+CREATE SCHEMA mytosb AUTHORIZATION postgres;
+
+-- DROP SEQUENCE mytosb.syspay_id_paybank_seq;
+
+CREATE SEQUENCE mytosb.syspay_id_paybank_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE mytosb.tranzserv_id_tranz_service_seq;
+
+CREATE SEQUENCE mytosb.tranzserv_id_tranz_service_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- mytosb.contracts определение
+
+-- Drop table
+
+-- DROP TABLE mytosb.contracts;
+
+CREATE TABLE mytosb.contracts (
+	id_tranzservice int4 DEFAULT nextval('mytosb.tranzserv_id_tranz_service_seq'::regclass) NOT NULL,
+	inn_firm bpchar(12) NULL,
+	bank bpchar(9) NULL,
+	merchant int2 NULL,
+	service int2 NULL,
+	ekassa jsonb NULL,
+	type_sys varchar(10) NULL,
+	"enable" bool DEFAULT true NULL,
+	firmservice varchar(10) NULL,
+	contragent int4 NULL,
+	bank_core bpchar(20) NULL,
+	login_phone bpchar(12) NULL,
+	CONSTRAINT tranz_service_pkey PRIMARY KEY (id_tranzservice)
+);
+
+
+-- mytosb.info определение
+
+-- Drop table
+
+-- DROP TABLE mytosb.info;
+
+CREATE TABLE mytosb.info (
+	firm varchar(50) NULL,
+	inn varchar(12) NULL,
+	bank varchar(50) NULL,
+	syspay int2 NULL,
+	"type syspay" varchar(50) NULL,
+	ecassa jsonb NULL,
+	service int2 NULL
+);
+
+
+-- mytosb.syspay определение
+
+-- Drop table
+
+-- DROP TABLE mytosb.syspay;
+
+CREATE TABLE mytosb.syspay (
+	id_paybank serial4 NOT NULL,
+	json_inside jsonb NULL,
+	json_tobank jsonb NULL,
+	json_answer jsonb NULL,
+	json_callback jsonb NULL,
+	idpay jsonb NOT NULL,
+	"enable" bool DEFAULT false NOT NULL,
+	CONSTRAINT doc_syspay_pkey PRIMARY KEY (id_paybank),
+	CONSTRAINT idpay UNIQUE (idpay)
+);
+
+-- Table Triggers
+
+create trigger tr_order_status before
+update
+    of json_callback on
+    mytosb.syspay for each row execute function ataxi_transfer.f_order_status();
+create trigger tr_payment after
+update
+    of json_callback on
+    mytosb.syspay for each row execute function mytosb.f_tr_payment();
+
+
+-- mytosb.users определение
+
+-- Drop table
+
+-- DROP TABLE mytosb.users;
+
+CREATE TABLE mytosb.users (
+	id_users varchar(255) NOT NULL,
+	pass varchar(255) NULL,
+	descriptions varchar(255) NULL,
+	CONSTRAINT users_pkey PRIMARY KEY (id_users)
+);
+
+
+-- mytosb.xcount_agent определение
+
+-- Drop table
+
+-- DROP TABLE mytosb.xcount_agent;
+
+CREATE TABLE mytosb.xcount_agent (
+	count int8 NULL
+);
+
+
+
+-- DROP FUNCTION mytosb.f_ansbank(json, int4);
+
+CREATE OR REPLACE FUNCTION mytosb.f_ansbank(xjson json, newid integer)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xidpay INTEGER;
+		xamount INTEGER;
+		xamount_comiss INTEGER;
+		xamount_inside INTEGER;
+	  xclient JSON;
+	  xtimestamp JSON;
+	  xpay_code JSON;
+	  xcomiss VARCHAR;
+	  xprincipal VARCHAR;
+		xdesc_sum_tarif VARCHAR DEFAULT 'Стоимость поездки по тарифу ~ руб.';
+		xdesc_sum_comiss VARCHAR DEFAULT 'Комиссия за перевод составит &% от стоимости поездки и равна @ руб.';
+		xdesc_sum_pay VARCHAR DEFAULT 'Итоговая сумма к списанию # руб.';
+	  xdescription VARCHAR DEFAULT 'Оплачивая, Вы соглашаетесь с положениями оферты, предусматривающими взимание комиссии.';
+	--{
+	--"Data": {
+		--"image": {
+			--"width": 200, 
+			--"height": 200, 
+			--"content": "qrcode_base64", 
+			--"mediaType": "image/png"
+			--}, 
+		--"qrcId":"AD10004NBI1TU7R69Q6R9EC0E8OIU4QT", 
+		--"payload": "https://qr.nspk.ru/AD10004NBI1TU7R69Q6R9EC0E8OIU4QT?type=02&bank=100000000065&sum=1200&cur=RUB&crc=3C45"
+		--}, 
+--"Meta": {
+	--"totalPages": 1
+--}, 
+--"Links": {
+	--"self": "http://enter.tochka.com/sbp/v1.0/qr-code/merchant/MA0000455002/40702810909500013862/044525999"
+	--}
+--}
+	BEGIN
+		SELECT json_build_object('client',jsonb_build_object('id_order',json_inside ->> 'id_order','client_id',json_inside ->> 'client_id')),
+		LEFT(json_inside ->> 'principal',6),(json_inside ->> 'upcomiss')::integer,(json_inside ->> 'amount_inside')::integer,(json_inside ->> 'amount')::integer
+		INTO xclient,xprincipal,xamount_comiss,xamount_inside,xamount FROM mytosb.syspay WHERE id_paybank = newid;
+		SELECT (((fljson_firm ->> 'upcomission')::numeric(3,2) * 100)::float)::text INTO xcomiss 
+		FROM common.firmservice WHERE idfirm = xprincipal;
+		--||--xamount_comiss := ((xamount_comiss::integer / 100)::numeric(7,2))::text; 
+		xdesc_sum_tarif := REPLACE(xdesc_sum_tarif,'~',((xamount_inside / 100)::numeric(7,2))::text);
+		xdesc_sum_comiss := REPLACE(xdesc_sum_comiss,'&',xcomiss);
+		xdesc_sum_comiss := REPLACE(xdesc_sum_comiss,'@',((xamount_comiss::numeric(7,2) / 100)::numeric(7,2))::text);
+		xdesc_sum_pay := REPLACE(xdesc_sum_pay,'#',((xamount / 100)::numeric(7,2))::text);
+		xpay_code := xjson::jsonb -> 'Data' || xclient::jsonb
+		|| jsonb_build_object('sum_tarif',xdesc_sum_tarif,'sum_comiss',xdesc_sum_comiss,'sum_pay',xdesc_sum_pay,'description',xdescription); 
+		xtimestamp := jsonb_build_object('timestamp',common.f_timestamp());
+		UPDATE mytosb.syspay SET json_answer = xpay_code::jsonb || xtimestamp::jsonb WHERE id_paybank = newid; 
+		xpay_code := xpay_code::jsonb - 'qrcId';
+	RETURN xpay_code;
+END
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_ansclient(json, bpchar);
+
+CREATE OR REPLACE FUNCTION mytosb.f_ansclient(param json, ans_client character)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xyear INTEGER;
+	DECLARE xidpay INTEGER;
+ BEGIN
+ xyear := (param::jsonb ->> 'year')::integer;
+ xidpay := (param::jsonb ->> 'id_paybank')::integer;
+ UPDATE reports.payment SET answer = jsonb_build_object('bank',ans_client) 
+ WHERE "year" = xyear AND (data_json ->> 'id_paybank')::integer = xidpay;
+END
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_api_users(bpchar);
+
+CREATE OR REPLACE FUNCTION mytosb.f_api_users(xlogin character)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xvalue json;
+	BEGIN
+	SELECT json_build_object('key',"id_users",'password',"pass") INTO xvalue FROM mytosb.users WHERE id_users = xlogin;
+	RETURN xvalue;
+	END;
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_api_users_d(bpchar);
+
+CREATE OR REPLACE FUNCTION mytosb.f_api_users_d(xlogin character)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xvalue text;
+	BEGIN
+	SELECT descriptions::text INTO xvalue FROM mytosb.users WHERE id_users = xlogin;
+	RETURN xvalue;
+	END;
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_callback_bank(json);
+
+CREATE OR REPLACE FUNCTION mytosb.f_callback_bank(xjson json)
+ RETURNS json
+ LANGUAGE plpgsql
+ COST 10
+AS $function$
+	DECLARE xbillid JSONB;
+	DECLARE xcallback JSON;
+	DECLARE xans JSON;
+	DECLARE xidpay INTEGER;
+	DECLARE xidcallback VARCHAR DEFAULT 'pay_result';
+	DECLARE xyear VARCHAR;
+	DECLARE xurl_callback VARCHAR;
+	DECLARE xidorder VARCHAR;
+	DECLARE xdescript VARCHAR;
+	DECLARE xresult VARCHAR DEFAULT ' перевел(а) Вам ';
+	BEGIN
+	xbillid := xjson::jsonb -> 'qrcId';
+	SELECT id_paybank,json_inside ->> 'id_order',json_inside ->> 'url_callback',LEFT(json_inside ->> 'datetime',4) 
+	INTO xidpay,xidorder,xurl_callback,xyear FROM mytosb.syspay WHERE json_answer -> 'qrcId' = xbillid;
+	UPDATE mytosb.syspay SET json_callback = xjson WHERE id_paybank = xidpay; 
+	UPDATE mytosb.syspay SET "enable" = true WHERE id_paybank = xidpay;
+	xdescript := (xjson::jsonb ->> 'payerName')::text || xresult || (xjson::jsonb ->> 'amount')::text || ' руб.';
+	xans := jsonb_build_object('client',jsonb_build_object('id_callback',xidcallback,'id_order',xidorder,'descript',xdescript),
+	'url_callback',xurl_callback,'answer',jsonb_build_object('id_paybank',xidpay,'year',xyear));
+	RETURN xans;
+END
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_heads();
+
+CREATE OR REPLACE FUNCTION mytosb.f_heads()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+  DECLARE xmerch INTEGER DEFAULT 26;
+  DECLARE xurl VARCHAR;
+	DECLARE xaccess VARCHAR;
+	DECLARE xauto VARCHAR;
+  DECLARE xurlj JSON;
+BEGIN
+    SELECT common.merchant.xjson ->> 'GetQrCode' INTO xurl FROM common.merchant WHERE idmerch = xmerch;
+    SELECT common.merchant.xjson -> 'token' ->> 'access_token' INTO xaccess FROM common.merchant WHERE idmerch = xmerch;
+    xurlj := json_build_object('Url', xurl, 'Authorization', xaccess );
+    RETURN xurlj;
+END;
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_syspay(json);
+
+CREATE OR REPLACE FUNCTION mytosb.f_syspay(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xans JSON;
+		xidpay JSON;
+		xmerch INTEGER;
+		xnewid INTEGER;
+		xservice INTEGER;
+		xcomiss NUMERIC(3,2);
+		xamount_inside INTEGER;
+		xamount INTEGER;
+		xamount_comiss INTEGER;
+		xname_prod VARCHAR;
+		xaccount VARCHAR;
+		xerr VARCHAR DEFAULT 'dublicate id_order';
+		xtimestamp VARCHAR;
+	--input data:
+	--{
+  --"login_dev": "uptaxi",
+	--"url_callback": "https:.......", 
+  --"id_order": "11a5ce1b-336a-11ed-a8af-b4d5bd9a0as",
+  --"amount": 100,
+  --"phone_ customer": "+79101234567",
+  --"email_customer": "mail@mail.ru",
+  --"datetime": "2023-02-17T12:13:30",
+  --"principal": "200190",
+  --"products": 
+  --[
+  --{
+  --"name_prod": "pizza", "unit": "1","count": 1, "price": 100,"amount_prod": 10000
+  --},
+	--{
+  --"name_prod": "pizza", "unit": "1","count": 1, "price": 100,"amount_prod": 10000
+  --}
+  --]
+  --}
+BEGIN
+	xtimestamp := jsonb_build_object('timestamp',common.f_timestamp());
+	xidpay := jsonb_build_object('login_dev',x_json::jsonb ->> 'login_dev','id_order',x_json::jsonb ->> 'id_order');
+	xaccount := x_json::jsonb ->> 'principal';
+	xname_prod := (x_json::jsonb -> 'products' -> 0 -> 'name_prod');
+	SELECT fljson_firm ->> 'service',(fljson_firm ->> 'upcomission')::numeric(3,2) 
+	INTO xservice,xcomiss FROM common.firmservice WHERE idfirm = LEFT(xaccount,6);
+	SELECT syspay INTO xmerch FROM mytosb.info WHERE service = xservice;
+	SELECT xjson -> 'DataQrCode' INTO xans FROM common.merchant WHERE idmerch = xmerch;
+	xamount_inside := (x_json::jsonb ->> 'amount')::integer;
+	xamount_comiss := ((x_json::jsonb ->> 'amount')::integer * xcomiss::numeric(3,2))::integer;
+	xamount := (x_json::jsonb ->> 'amount')::integer + xamount_comiss::integer;
+	x_json := jsonb_set(x_json::jsonb,'{amount}',(xamount::text)::jsonb,FALSE);
+	x_json := x_json::jsonb || xtimestamp::jsonb || jsonb_build_object('merch',xmerch,'upcomiss',xamount_comiss,'amount_inside',xamount_inside);
+	BEGIN
+		INSERT INTO mytosb.syspay (json_inside,idpay) VALUES (x_json,xidpay) RETURNING id_paybank INTO xnewid;
+		EXCEPTION WHEN unique_violation THEN
+			xans := jsonb_build_object('err',1,'ans',xerr);
+		RETURN xans;
+	END;
+	xans := jsonb_set(xans::jsonb,'{Data,amount}',(xamount::text)::jsonb,FALSE);
+	xans := jsonb_set(xans::jsonb,'{Data,paymentPurpose}',xname_prod::jsonb,FALSE);
+	xans := jsonb_build_object('err',0,'newid',xnewid,'ans',xans) || xtimestamp::jsonb;
+	UPDATE mytosb.syspay SET json_tobank = xans WHERE id_paybank = xnewid;	
+  RETURN xans;
+END;
+--output data:
+--{
+--"Data": {
+		--"ttl": 25,  
+		--"amount": "0", 
+		--"qrcType": "02", 
+		--"currency": "RUB", 
+		--"sourceName": "atotx", 
+		--"imageParams": {
+				--"width": 200, 
+				--"height": 200, 
+				--"mediaType": "image/png"
+				--}, 
+		--"paymentPurpose": "услуги такси"
+		--}
+--}
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_syspay_transfer(json);
+
+CREATE OR REPLACE FUNCTION mytosb.f_syspay_transfer(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xans JSON;
+	DECLARE xidpay JSON;
+	DECLARE xmerch INTEGER;
+  DECLARE xnewid INTEGER;
+	DECLARE xservice INTEGER;
+	DECLARE xcomiss NUMERIC(3,2);
+	DECLARE xlogin_dev JSON DEFAULT '{"login_dev": "transfer"}';
+	DECLARE xurl_callback VARCHAR DEFAULT NULL;
+	DECLARE xprincipal JSON DEFAULT '{"principal": "200220"}';
+	DECLARE xproducts JSON DEFAULT '{"products": [{"unit": "шт", "count": 1, "price": 0, "name_prod": "услуги трансфера", "amount_prod": 0, "supplier_phone": "+79409912255"}]}';
+  DECLARE xamount VARCHAR;
+  DECLARE xaccount VARCHAR;
+	DECLARE xerr VARCHAR DEFAULT 'dublicate id_order';
+	DECLARE xtimestamp VARCHAR;
+	--input data:
+	--{
+  --"login_dev": "uptaxi",
+	--"client_id": "111",
+	--"url_callback": "https:.......", 
+  --"id_order": "11a5ce1b-336a-11ed-a8af-b4d5bd9a0as",
+  --"amount": 100,
+  --"phone_ customer": "+79101234567",
+  --"email_customer": "mail@mail.ru",
+  --"datetime": "2023-02-17T12:13:30",
+  --"principal": "200190",
+  --"products": 
+  --[
+  --{
+  --"name_prod": "pizza", "unit": "1","count": 1, "price": 100,"amount_prod": 10000
+  --},
+	--{
+  --"name_prod": "pizza", "unit": "1","count": 1, "price": 100,"amount_prod": 10000
+  --}
+  --]
+  --}
+BEGIN
+	xtimestamp := jsonb_build_object('timestamp',common.f_timestamp());
+	xidpay := xlogin_dev::jsonb || jsonb_build_object('id_order',x_json::jsonb ->> 'id_order');
+	xaccount := xprincipal::jsonb ->> 'principal';
+	SELECT fljson_firm ->> 'service',fljson_firm ->> 'upcomission' 
+	INTO xservice,xcomiss FROM common.firmservice WHERE idfirm = xaccount;
+	SELECT syspay INTO xmerch FROM mytosb.info WHERE service = xservice;
+	SELECT xjson -> 'DataQrCode' INTO xans FROM common.merchant WHERE idmerch = xmerch;
+	xamount := ((x_json::jsonb ->> 'amount')::integer + ((x_json::jsonb ->> 'amount')::integer * xcomiss::numeric(3,2))::integer)::text;
+	x_json := jsonb_set(x_json::jsonb,'{amount}',xamount::jsonb,FALSE);
+	x_json := x_json::jsonb || xtimestamp::jsonb || jsonb_build_object('datetime',common.f_timestamp(),'merch',xmerch) || 
+	xidpay::jsonb || xprincipal::jsonb || xproducts::jsonb;
+	x_json := jsonb_set(x_json::jsonb,'{products,0,price}',xamount::jsonb,FALSE);
+	x_json := jsonb_set(x_json::jsonb,'{products,0,amount_prod}',xamount::jsonb,FALSE);
+	BEGIN
+		INSERT INTO mytosb.syspay (json_inside,idpay) VALUES (x_json,xidpay) RETURNING id_paybank INTO xnewid;
+		EXCEPTION WHEN unique_violation THEN
+			xans := jsonb_build_object('err',1,'ans',xerr);
+		RETURN xans;
+	END;
+	xans := jsonb_set(xans::jsonb,'{Data,amount}',xamount::jsonb,FALSE);
+	xans := jsonb_build_object('err',0,'newid',xnewid,'ans',xans) || xtimestamp::jsonb;
+	UPDATE mytosb.syspay SET json_tobank = xans WHERE id_paybank = xnewid;	
+  RETURN xans;
+END;
+--output data:
+--{
+--"Data": {
+		--"ttl": 25,  
+		--"amount": "0", 
+		--"qrcType": "02", 
+		--"currency": "RUB",  
+		--"sourceName": "atotx", 
+		--"imageParams": {
+				--"width": 200, 
+				--"height": 200, 
+				--"mediaType": "image/png"
+				--}, 
+		--"paymentPurpose": "услуги такси"
+		--}
+--}
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_token_access(json);
+
+CREATE OR REPLACE FUNCTION mytosb.f_token_access(x_json json)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xmerch INTEGER DEFAULT 26;
+	DECLARE yjson json;
+	DECLARE zjson json;
+BEGIN
+		SELECT xjson - 'token' INTO zjson FROM common.merchant WHERE idmerch = xmerch;
+		yjson := jsonb_build_object('token',x_json) || zjson::jsonb;
+    UPDATE common.merchant SET xjson = yjson WHERE idmerch = xmerch;
+END;
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_token_refresh();
+
+CREATE OR REPLACE FUNCTION mytosb.f_token_refresh()
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xmerch INTEGER DEFAULT 26;
+	DECLARE xanswer JSON;
+	DECLARE xid VARCHAR;
+	DECLARE xsecret json;
+	DECLARE xrefresh json;
+	DECLARE xref_url json;
+BEGIN
+    SELECT xjson ->> 'client_id',xjson -> 'client_secret',xjson -> 'refresh_url',xjson -> 'token' -> 'refresh_token'
+		INTO xid,xsecret,xref_url,xrefresh
+		FROM common.merchant 
+		WHERE idmerch = xmerch;
+    xanswer := jsonb_build_object('ref_url',xref_url) || 
+		jsonb_build_object('json_data',jsonb_build_object('client_id',xid,'client_secret',xsecret,'refresh_token',xrefresh,'grant_type','refresh_token'));
+    RETURN xanswer;
+END;
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_tr_payment();
+
+CREATE OR REPLACE FUNCTION mytosb.f_tr_payment()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xdata JSON; 
+	  xpaymerch JSON; 
+	  xjsonfirm JSON;
+	  xjsoncomm JSON;
+	  xlogin JSON;
+	  xmerch JSON;
+	  xtarif JSON; 
+	  xekassa JSON;
+	  xproducts JSON;
+		xsuplier_org JSON;
+	  xbillid INTEGER;
+	  xcommparam INTEGER;
+	  xyear INTEGER;
+	  xamount INTEGER;
+	  xidmerch INTEGER;
+	  xsum NUMERIC(10,2);
+	  xratio NUMERIC(10,2);
+	  xidtarif INTEGER;
+	  xnewid INTEGER;
+	  xfirm CHAR(6);
+	  xorg CHAR(2);
+	  xidlogin CHAR(10);
+    xdatetime VARCHAR;
+    xemail VARCHAR;
+    xphone VARCHAR;
+	  xchannel VARCHAR;
+BEGIN 
+		SELECT NEW.json_inside,LEFT(NEW.json_inside ->> 'principal',6),(NEW.json_inside ->> 'amount')::integer,NEW.id_paybank,NEW.json_inside ->> 'datetime',
+		NEW.json_inside ->> 'phone_customer',NEW.json_inside ->> 'email_customer',NEW.json_inside -> 'products',NEW.json_inside -> 'merch' 
+		INTO xdata,xfirm,xamount,xbillid,xdatetime,xphone,xemail,xproducts,xidmerch FROM mytosb.syspay; 
+		xyear := LEFT(xdatetime,4)::integer;
+		xdata := xdata::jsonb || jsonb_build_object('id_paybank',xbillid);
+		SELECT fljson_firm,fljson_firm ->> 'login',idcommparam,firm INTO xjsonfirm,xidlogin,xcommparam,xorg
+		FROM common.firmservice WHERE idfirm = xfirm;
+		SELECT json_commparam INTO xjsoncomm FROM common.commparam WHERE idcommparam = xcommparam AND common.commparam."enable" = true;
+		SELECT attributies INTO xlogin FROM auth.users WHERE login_master = xidlogin;
+		SELECT jsonb_build_object('org',(form_org || ' ' || name_org),'inn',inn_org) 
+		INTO xsuplier_org FROM common.organisations WHERE id_firm = xorg;
+		SELECT accesuaries,(accesuaries ->> 'format_amount')::numeric INTO xmerch,xratio FROM common.merchant WHERE idmerch = xidmerch;
+		xsum := (xamount * xratio)::numeric(10,2);
+		SELECT common.tranztarif."Tarif" INTO xidtarif 
+		FROM common.tranztarif JOIN common.breakesum ON (common.tranztarif."Breakesum" = common.breakesum.idbreake) 
+		WHERE common.tranztarif."Firm" = xfirm AND common.tranztarif."Syspay" = xidmerch AND common.tranztarif."Enable" = 1 
+		AND (xsum < (common.breakesum.json_breakesum ->> 'Maxsum')::numeric AND xsum > (common.breakesum.json_breakesum ->> 'Minsum')::numeric);
+		SELECT json_tarif INTO xtarif FROM common.tarif WHERE idtarif = xidtarif;
+		xpaymerch := jsonb_build_object('id_order',xdata ->> 'id_order','merch',xidmerch);
+		SELECT ecassa::jsonb INTO xekassa FROM mytosb.info WHERE syspay = xidmerch;
+		SELECT channel_notify INTO xchannel FROM ekassa.ekassa WHERE id_kass = (xekassa -> 'ecassa' ->> 0)::integer;
+		BEGIN
+			INSERT INTO reports.payment(data_json,year,idpaymerch,comm_json,firm_json,merch_json,tarif_json,e_kassa)
+			VALUES (xdata,xyear,xpaymerch,xjsoncomm,(xjsonfirm::jsonb || xlogin::jsonb || xsuplier_org::jsonb),xmerch,xtarif,xekassa) 
+			ON CONFLICT DO NOTHING RETURNING qtranz INTO xnewid;
+		END;
+		PERFORM pg_notify(xchannel,xnewid::text);
+		RETURN NULL;
+END
+$function$
+;
+
+-- DROP FUNCTION mytosb.f_tr_payment_test();
+
+CREATE OR REPLACE FUNCTION mytosb.f_tr_payment_test()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xdata JSON; 
+	  xpaymerch JSON; 
+	  xjsonfirm JSON;
+	  xjsoncomm JSON;
+	  xlogin JSON;
+	  xmerch JSON;
+	  xtarif JSON; 
+	  xekassa JSON;
+	  xproducts JSON;
+	  xbillid INTEGER;
+	  xcommparam INTEGER;
+	  xyear INTEGER;
+	  xamount INTEGER;
+	  xidmerch INTEGER;
+	  xsum NUMERIC(10,2);
+	  xratio NUMERIC(10,2);
+	  xidtarif INTEGER;
+	  xnewid INTEGER;
+	  xfirm CHAR(6);
+	  xorg CHAR(2);
+	  xsuplier_org JSON;
+	  xidlogin CHAR(10);
+    xdatetime VARCHAR;
+    xemail VARCHAR;
+    xphone VARCHAR;
+	  xchannel VARCHAR;
+BEGIN 
+		SELECT json_inside,LEFT(json_inside ->> 'principal',6),(json_inside ->> 'amount')::integer,id_paybank,json_inside ->> 'datetime',
+		json_inside ->> 'phone_customer',json_inside ->> 'email_customer',json_inside -> 'products',json_inside -> 'merch' 
+		INTO xdata,xfirm,xamount,xbillid,xdatetime,xphone,xemail,xproducts,xidmerch FROM mytosb.syspay WHERE id_paybank = 776; 
+		xyear := LEFT(xdatetime,4)::integer;
+		xdata := xdata::jsonb || jsonb_build_object('id_paybank',xbillid);
+		SELECT fljson_firm,fljson_firm ->> 'login',idcommparam,firm INTO xjsonfirm,xidlogin,xcommparam,xorg
+		FROM common.firmservice WHERE idfirm = xfirm;
+		SELECT json_commparam INTO xjsoncomm FROM common.commparam WHERE idcommparam = xcommparam AND common.commparam."enable" = true;
+		SELECT attributies INTO xlogin FROM auth.users WHERE login_master = xidlogin;
+		SELECT jsonb_build_object('org',(form_org || ' ' || name_org),'inn',inn_org) 
+		INTO xsuplier_org FROM common.organisations WHERE id_firm = xorg;
+		SELECT accesuaries,(accesuaries ->> 'format_amount')::numeric INTO xmerch,xratio FROM common.merchant WHERE idmerch = xidmerch;
+		xsum := (xamount * xratio)::numeric(10,2);
+		SELECT common.tranztarif."Tarif" INTO xidtarif 
+		FROM common.tranztarif JOIN common.breakesum ON (common.tranztarif."Breakesum" = common.breakesum.idbreake) 
+		WHERE common.tranztarif."Firm" = xfirm AND common.tranztarif."Syspay" = xidmerch AND common.tranztarif."Enable" = 1 
+		AND (xsum < (common.breakesum.json_breakesum ->> 'Maxsum')::numeric AND xsum > (common.breakesum.json_breakesum ->> 'Minsum')::numeric);
+		SELECT json_tarif INTO xtarif FROM common.tarif WHERE idtarif = xidtarif;
+		xpaymerch := jsonb_build_object('id_order',xdata ->> 'id_order','merch',xidmerch);
+		SELECT ecassa::jsonb INTO xekassa FROM mytosb.info WHERE syspay = xidmerch;
+		SELECT channel_notify INTO xchannel FROM ekassa.ekassa WHERE id_kass = (xekassa -> 'ecassa' ->> 0)::integer;
+		BEGIN
+			INSERT INTO reports.payment(data_json,year,idpaymerch,comm_json,firm_json,merch_json,tarif_json,e_kassa)
+			VALUES (xdata,xyear,xpaymerch,xjsoncomm,(xjsonfirm::jsonb || xlogin::jsonb || xsuplier_org::jsonb),xmerch,xtarif,xekassa) 
+			ON CONFLICT DO NOTHING RETURNING qtranz INTO xnewid;
+		END;
+		PERFORM pg_notify(xchannel,xnewid::text);
+		--RETURN xekassa;
+		RETURN xsuplier_org;
+END
+$function$
+;
+
+-- DROP SCHEMA public;
+
+CREATE SCHEMA public AUTHORIZATION postgres14;
+
+-- DROP SEQUENCE public.t_24alltime_qtranz_seq;
+
+CREATE SEQUENCE public.t_24alltime_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_breakesum_idbreake_seq;
+
+CREATE SEQUENCE public.t_breakesum_idbreake_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_ckassa_qtranz_seq;
+
+CREATE SEQUENCE public.t_ckassa_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_commparam_idcommparam_seq;
+
+CREATE SEQUENCE public.t_commparam_idcommparam_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_commun_idcommun_seq;
+
+CREATE SEQUENCE public.t_commun_idcommun_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_department_id_seq;
+
+CREATE SEQUENCE public.t_department_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_descriptions_id_seq;
+
+CREATE SEQUENCE public.t_descriptions_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_firmservice_qtranz_seq;
+
+CREATE SEQUENCE public.t_firmservice_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_groupusers_qtranz_seq;
+
+CREATE SEQUENCE public.t_groupusers_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_merchant_idmerch_seq;
+
+CREATE SEQUENCE public.t_merchant_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_onlinecassa_id_cassa_seq;
+
+CREATE SEQUENCE public.t_onlinecassa_id_cassa_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_paybarry_qtranz_seq;
+
+CREATE SEQUENCE public.t_paybarry_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_payment2022_qtranz_seq;
+
+CREATE SEQUENCE public.t_payment2022_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2299999999
+	START 2200000000
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_payment2023_qtranz_seq;
+
+CREATE SEQUENCE public.t_payment2023_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2399999999
+	START 2300000000
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_payment2024_qtranz_seq;
+
+CREATE SEQUENCE public.t_payment2024_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2499999999
+	START 2400000000
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_payview_idpayview_seq;
+
+CREATE SEQUENCE public.t_payview_idpayview_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_qiwi_qtranz_seq;
+
+CREATE SEQUENCE public.t_qiwi_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_qiwiequar_id_qiwiequar_seq;
+
+CREATE SEQUENCE public.t_qiwiequar_id_qiwiequar_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_rsbank_id_rsbank_seq;
+
+CREATE SEQUENCE public.t_rsbank_id_rsbank_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_sberequar_id_sberequar_seq;
+
+CREATE SEQUENCE public.t_sberequar_id_sberequar_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_sbersms_qtranz_seq;
+
+CREATE SEQUENCE public.t_sbersms_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_service_id_service_seq;
+
+CREATE SEQUENCE public.t_service_id_service_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_skysend_qtranz_seq;
+
+CREATE SEQUENCE public.t_skysend_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_tarif_idtarif_seq;
+
+CREATE SEQUENCE public.t_tarif_idtarif_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_tranztarif_idtranz_seq;
+
+CREATE SEQUENCE public.t_tranztarif_idtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_usergroup_id_usergroup_seq;
+
+CREATE SEQUENCE public.t_usergroup_id_usergroup_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.t_users_qtranz_seq;
+
+CREATE SEQUENCE public.t_users_qtranz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- public.t_24alltime определение
+
+-- Drop table
+
+-- DROP TABLE public.t_24alltime;
+
+CREATE TABLE public.t_24alltime (
+	qtranz serial4 NOT NULL,
+	fljson jsonb NULL,
+	idpaymerch jsonb NOT NULL,
+	verification int4 NULL,
+	CONSTRAINT t_24alltime_pkey PRIMARY KEY (idpaymerch),
+	CONSTRAINT t_24alltime_qtranz_key UNIQUE (qtranz)
+);
+
+
+-- public.t_breakesum определение
+
+-- Drop table
+
+-- DROP TABLE public.t_breakesum;
+
+CREATE TABLE public.t_breakesum (
+	idbreake smallserial NOT NULL,
+	json_breakesum jsonb NULL,
+	CONSTRAINT t_breakesum_pkey PRIMARY KEY (idbreake)
+);
+
+
+-- public.t_ckassa определение
+
+-- Drop table
+
+-- DROP TABLE public.t_ckassa;
+
+CREATE TABLE public.t_ckassa (
+	qtranz serial4 NOT NULL,
+	fljson jsonb NULL,
+	idpaymerch jsonb NOT NULL,
+	verification int4 NULL,
+	CONSTRAINT t_ckassa_pkey PRIMARY KEY (idpaymerch),
+	CONSTRAINT t_ckassa_qtranz_key UNIQUE (qtranz)
+);
+
+
+-- public.t_commparam определение
+
+-- Drop table
+
+-- DROP TABLE public.t_commparam;
+
+CREATE TABLE public.t_commparam (
+	idcommparam serial4 NOT NULL,
+	"enable" bool DEFAULT true NULL,
+	json_commparam jsonb NOT NULL,
+	CONSTRAINT " unique" UNIQUE (idcommparam),
+	CONSTRAINT doc_commparam_pkey PRIMARY KEY (json_commparam)
+);
+CREATE UNIQUE INDEX " unique" ON public.t_commparam USING btree (idcommparam);
+
+
+-- public.t_commun определение
+
+-- Drop table
+
+-- DROP TABLE public.t_commun;
+
+CREATE TABLE public.t_commun (
+	idcommun serial4 NOT NULL,
+	"NameComm" varchar(50) NOT NULL,
+	"Comment" varchar(250) NULL,
+	template_answer varchar(255) NULL,
+	"enable" bool DEFAULT true NULL,
+	CONSTRAINT t_commun_pkey PRIMARY KEY (idcommun)
+);
+
+
+-- public.t_department определение
+
+-- Drop table
+
+-- DROP TABLE public.t_department;
+
+CREATE TABLE public.t_department (
+	id smallserial NOT NULL,
+	"name" varchar(250) NULL,
+	en_name varchar(250) NULL,
+	color varchar(20) NULL,
+	CONSTRAINT t_department_pkey PRIMARY KEY (id)
+);
+
+
+-- public.t_descriptions определение
+
+-- Drop table
+
+-- DROP TABLE public.t_descriptions;
+
+CREATE TABLE public.t_descriptions (
+	id serial4 NOT NULL,
+	"Name" varchar NULL,
+	description varchar NULL,
+	CONSTRAINT t_descriptions_pkey PRIMARY KEY (id)
+);
+
+
+-- public.t_firmservice определение
+
+-- Drop table
+
+-- DROP TABLE public.t_firmservice;
+
+CREATE TABLE public.t_firmservice (
+	idfirm bpchar(6) NOT NULL,
+	"enable" bool DEFAULT true NULL,
+	fljson_firm jsonb NULL,
+	CONSTRAINT t_firmservice_pkey PRIMARY KEY (idfirm)
+);
+
+
+-- public.t_merchant определение
+
+-- Drop table
+
+-- DROP TABLE public.t_merchant;
+
+CREATE TABLE public.t_merchant (
+	idmerch serial4 NOT NULL,
+	xjson jsonb NULL,
+	accesuaries jsonb NULL,
+	" enable" bool DEFAULT true NULL,
+	CONSTRAINT "public.t_merchant" PRIMARY KEY (idmerch)
+);
+
+
+-- public.t_onlinecassa определение
+
+-- Drop table
+
+-- DROP TABLE public.t_onlinecassa;
+
+CREATE TABLE public.t_onlinecassa (
+	id_cassa smallserial NOT NULL,
+	accesuaries jsonb NULL,
+	CONSTRAINT t_onlinecassa_pkey PRIMARY KEY (id_cassa)
+);
+
+
+-- public.t_payberry определение
+
+-- Drop table
+
+-- DROP TABLE public.t_payberry;
+
+CREATE TABLE public.t_payberry (
+	qtranz int4 DEFAULT nextval('t_paybarry_qtranz_seq'::regclass) NOT NULL,
+	fljson jsonb NULL,
+	idpaymerch jsonb NOT NULL,
+	verification int4 NULL,
+	CONSTRAINT qtranz UNIQUE (qtranz),
+	CONSTRAINT t_payberry_pkey PRIMARY KEY (idpaymerch)
+);
+
+
+-- public.t_payment определение
+
+-- Drop table
+
+-- DROP TABLE public.t_payment;
+
+CREATE TABLE public.t_payment (
+	qtranz int4 NULL,
+	"DateTime" timestamp(6) NULL,
+	data_json jsonb NULL,
+	answer varchar(255) DEFAULT 0 NULL,
+	comm_json jsonb NULL,
+	firm_json jsonb NULL,
+	privilege_json jsonb NULL,
+	merch_json jsonb NULL,
+	tarif_json jsonb NULL,
+	idpaymerch jsonb NULL
+)
+PARTITION BY RANGE ("DateTime");
+
+
+-- public.t_payview определение
+
+-- Drop table
+
+-- DROP TABLE public.t_payview;
+
+CREATE TABLE public.t_payview (
+	id_payview int2 DEFAULT nextval('t_payview_idpayview_seq'::regclass) NOT NULL,
+	payview varchar(255) NULL,
+	CONSTRAINT t_payview_pkey PRIMARY KEY (id_payview)
+);
+
+
+-- public.t_qiwi определение
+
+-- Drop table
+
+-- DROP TABLE public.t_qiwi;
+
+CREATE TABLE public.t_qiwi (
+	qtranz serial4 NOT NULL,
+	fljson jsonb NULL,
+	idpaymerch jsonb NOT NULL,
+	verification int4 NULL,
+	CONSTRAINT t_qiwi_pkey PRIMARY KEY (idpaymerch),
+	CONSTRAINT t_qiwi_qtranz_key UNIQUE (qtranz)
+);
+
+
+-- public.t_qiwiequar определение
+
+-- Drop table
+
+-- DROP TABLE public.t_qiwiequar;
+
+CREATE TABLE public.t_qiwiequar (
+	id_qiwiequar serial4 NOT NULL,
+	json_inside jsonb NULL,
+	json_ansbank jsonb NULL,
+	json_callback jsonb NULL,
+	CONSTRAINT t_qiwiequar_pkey PRIMARY KEY (id_qiwiequar)
+);
+
+
+-- public.t_rsbank определение
+
+-- Drop table
+
+-- DROP TABLE public.t_rsbank;
+
+CREATE TABLE public.t_rsbank (
+	id_rsbank serial4 NOT NULL,
+	json_inside jsonb NULL,
+	json_ansbank jsonb NULL,
+	json_callback jsonb NULL,
+	CONSTRAINT t_rsbank_pkey PRIMARY KEY (id_rsbank)
+);
+
+
+-- public.t_sberequar определение
+
+-- Drop table
+
+-- DROP TABLE public.t_sberequar;
+
+CREATE TABLE public.t_sberequar (
+	id_sberequar serial4 NOT NULL,
+	json_inside jsonb NULL,
+	json_ansbank jsonb NULL,
+	json_callback jsonb NULL,
+	CONSTRAINT t_sberequar_pkey PRIMARY KEY (id_sberequar)
+);
+
+
+-- public.t_sbersms определение
+
+-- Drop table
+
+-- DROP TABLE public.t_sbersms;
+
+CREATE TABLE public.t_sbersms (
+	qtranz serial4 NOT NULL,
+	fljson jsonb NULL,
+	idpaymerch jsonb NOT NULL,
+	verification int4 NULL,
+	CONSTRAINT t_sbersms_pkey PRIMARY KEY (idpaymerch),
+	CONSTRAINT t_sbersms_qtranz_key UNIQUE (qtranz)
+);
+
+
+-- public.t_service определение
+
+-- Drop table
+
+-- DROP TABLE public.t_service;
+
+CREATE TABLE public.t_service (
+	id_service smallserial NOT NULL,
+	"enable" bool DEFAULT true NOT NULL,
+	json_service jsonb NULL
+);
+
+
+-- public.t_skysend определение
+
+-- Drop table
+
+-- DROP TABLE public.t_skysend;
+
+CREATE TABLE public.t_skysend (
+	qtranz serial4 NOT NULL,
+	fljson jsonb NULL,
+	idpaymerch jsonb NOT NULL,
+	verification int4 NULL,
+	CONSTRAINT t_skysend_pkey PRIMARY KEY (idpaymerch),
+	CONSTRAINT t_skysend_qtranz_key UNIQUE (qtranz)
+);
+
+
+-- public.t_tarif определение
+
+-- Drop table
+
+-- DROP TABLE public.t_tarif;
+
+CREATE TABLE public.t_tarif (
+	idtarif serial4 NOT NULL,
+	json_tarif jsonb NULL,
+	"enable" bool DEFAULT true NULL,
+	CONSTRAINT t_tarif_pkey PRIMARY KEY (idtarif)
+);
+
+
+-- public.t_tranztarif определение
+
+-- Drop table
+
+-- DROP TABLE public.t_tranztarif;
+
+CREATE TABLE public.t_tranztarif (
+	idtranz serial4 NOT NULL,
+	"Firm" varchar(6) NOT NULL,
+	"Tarif" int2 NOT NULL,
+	"Syspay" int2 NOT NULL,
+	"Breakesum" int2 DEFAULT 1 NOT NULL,
+	login int4 NOT NULL,
+	"Enable" bool DEFAULT true NOT NULL,
+	delay int2 DEFAULT 0 NOT NULL,
+	CONSTRAINT t_tranztarif_pkey PRIMARY KEY ("Firm", "Syspay", "Breakesum")
+);
+CREATE INDEX "IDtranz" ON public.t_tranztarif USING btree (idtranz);
+
+
+-- public.t_usergroup определение
+
+-- Drop table
+
+-- DROP TABLE public.t_usergroup;
+
+CREATE TABLE public.t_usergroup (
+	id_usergroup serial4 NOT NULL,
+	name_usergroup varchar(255) DEFAULT nextval('t_usergroup_id_usergroup_seq'::regclass) NULL,
+	CONSTRAINT t_usergroup_pkey PRIMARY KEY (id_usergroup)
+);
+
+
+-- public.t_payment2022 определение
+
+CREATE TABLE public.t_payment2022 PARTITION OF public.t_payment (
+	CONSTRAINT t_payment2022_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2022-01-01 00:00:00') TO ('2023-01-01 00:00:00');
+
+
+-- public.t_payment2023 определение
+
+CREATE TABLE public.t_payment2023 PARTITION OF public.t_payment (
+	CONSTRAINT t_payment2023_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2023-01-01 00:00:00') TO ('2024-01-01 00:00:00');
+
+
+-- public.t_payment2024 определение
+
+CREATE TABLE public.t_payment2024 PARTITION OF public.t_payment (
+	CONSTRAINT t_payment2024_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2024-01-01 00:00:00') TO ('2025-01-01 00:00:00');
+
+
+
+-- DROP FUNCTION public."NewFunc"(anyelement);
+
+CREATE OR REPLACE FUNCTION public."NewFunc"(anyelement)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$BEGIN
+  --{"uuid": "@uuid","contacts":{"name": "@name","email": "@email", "phone": "phone"},"role":['driver','courier'],"core": [{"number": "@namber","service": "service","firm": "firm","region": "@region"},{"number": "@namber","service": "service","firm": "firm","region": "@region"}]}
+
+END
+$function$
+;
+
+-- DROP SCHEMA reports;
+
+CREATE SCHEMA reports AUTHORIZATION postgres;
+
+-- DROP TYPE reports."operation";
+
+CREATE TYPE reports."operation" AS ENUM (
+	'debet',
+	'kredit',
+	'saldo');
+
+-- DROP SEQUENCE reports.balance_id_balance_seq;
+
+CREATE SEQUENCE reports.balance_id_balance_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE reports.core_id_core_seq;
+
+CREATE SEQUENCE reports.core_id_core_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE reports.daybalance_id_daybalance_seq;
+
+CREATE SEQUENCE reports.daybalance_id_daybalance_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE reports.extbalance_id_extbalance_seq;
+
+CREATE SEQUENCE reports.extbalance_id_extbalance_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE reports.finoperation_id_finoper_seq;
+
+CREATE SEQUENCE reports.finoperation_id_finoper_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE reports.job_qtranz_job_seq;
+
+CREATE SEQUENCE reports.job_qtranz_job_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE reports.payment_qrtanz_seq;
+
+CREATE SEQUENCE reports.payment_qrtanz_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;-- reports."!balance" определение
+
+-- Drop table
+
+-- DROP TABLE reports."!balance";
+
+CREATE TABLE reports."!balance" (
+	id_balance int8 DEFAULT nextval('reports.balance_id_balance_seq'::regclass) NOT NULL,
+	amount int4 NULL,
+	datetime timestamp(6) DEFAULT now() NULL,
+	descript varchar(255) NULL,
+	service varchar(5) DEFAULT '00'::character varying NULL,
+	firm varchar(5) DEFAULT '00'::character varying NULL,
+	region varchar(3) NULL,
+	core varchar(10) NULL,
+	"operation" reports."operation" NULL,
+	id_parent int8 NULL,
+	tbl_parent varchar(50) NULL,
+	"uuid" varchar(50) NULL,
+	CONSTRAINT balance_pkey PRIMARY KEY (id_balance)
+);
+
+
+-- reports."!extbalance" определение
+
+-- Drop table
+
+-- DROP TABLE reports."!extbalance";
+
+CREATE TABLE reports."!extbalance" (
+	id_extbalance int8 DEFAULT nextval('reports.extbalance_id_extbalance_seq'::regclass) NOT NULL,
+	debet int4 DEFAULT 0 NULL,
+	kredit int4 DEFAULT 0 NULL,
+	saldo int4 DEFAULT 0 NULL,
+	core varchar(12) NULL,
+	"uuid" varchar(50) NULL,
+	"date" date NULL,
+	CONSTRAINT extbalance_pkey PRIMARY KEY (id_extbalance)
+);
+
+
+-- reports.core определение
+
+-- Drop table
+
+-- DROP TABLE reports.core;
+
+CREATE TABLE reports.core (
+	id_core bigserial NOT NULL,
+	core varchar(10) NULL,
+	uuid_user varchar(50) NULL,
+	CONSTRAINT core_pkey PRIMARY KEY (id_core)
+);
+
+
+-- reports.daybalance определение
+
+-- Drop table
+
+-- DROP TABLE reports.daybalance;
+
+CREATE TABLE reports.daybalance (
+	id_daybalance bigserial NOT NULL,
+	saldo_yesterday int4 DEFAULT 0 NULL,
+	debet int4 DEFAULT 0 NULL,
+	credit int4 DEFAULT 0 NULL,
+	saldo_today int4 DEFAULT 0 NULL,
+	core varchar(12) NULL,
+	"uuid" varchar(50) NULL,
+	"date" date NULL,
+	CONSTRAINT daybalance_pkey PRIMARY KEY (id_daybalance)
+);
+
+
+-- reports.finoperation определение
+
+-- Drop table
+
+-- DROP TABLE reports.finoperation;
+
+CREATE TABLE reports.finoperation (
+	id_finoper bigserial NOT NULL,
+	amount_debet int4 NULL,
+	amount_credit int4 NULL,
+	datetime timestamp(6) DEFAULT now() NULL,
+	descript varchar(255) NULL,
+	service varchar(5) DEFAULT '00'::character varying NULL,
+	firm varchar(50) DEFAULT '00'::character varying NULL,
+	region varchar(3) NULL,
+	core varchar(10) NULL,
+	"operation" reports."operation" NULL,
+	id_parent int8 NULL,
+	tbl_parent varchar(50) NULL,
+	"uuid" varchar(50) NULL,
+	CONSTRAINT finoperation_pkey PRIMARY KEY (id_finoper)
+);
+
+
+-- reports.job определение
+
+-- Drop table
+
+-- DROP TABLE reports.job;
+
+CREATE TABLE reports.job (
+	qtranz_job bigserial NOT NULL,
+	datetime varchar(20) DEFAULT now() NULL,
+	service varchar(5) DEFAULT '00'::character varying NULL,
+	firm varchar(6) DEFAULT '00'::character varying NULL,
+	region varchar(3) DEFAULT '00'::character varying NULL,
+	core varchar(10) DEFAULT '000000'::character varying NULL,
+	amount int4 NULL,
+	"uuid" varchar(50) NULL,
+	CONSTRAINT job_pkey PRIMARY KEY (qtranz_job)
+);
+
+-- Table Triggers
+
+create trigger tr_job_balance after
+insert
+    on
+    reports.job for each row execute function reports.f_tr_job();
+
+
+-- reports.payment определение
+
+-- Drop table
+
+-- DROP TABLE reports.payment;
+
+CREATE TABLE reports.payment (
+	qtranz int4 DEFAULT nextval('reports.payment_qrtanz_seq'::regclass) NOT NULL,
+	"year" int2 NOT NULL,
+	idpaymerch jsonb NOT NULL,
+	data_json jsonb NULL,
+	answer jsonb DEFAULT '{}'::jsonb NULL,
+	comm_json jsonb NULL,
+	firm_json jsonb NULL,
+	merch_json jsonb NULL,
+	tarif_json jsonb NULL,
+	e_kassa jsonb NULL,
+	ekassa_id int8 DEFAULT 0 NULL,
+	datetime timestamp(0) DEFAULT now() NULL
+)
+PARTITION BY RANGE (year);
+
+-- Table Triggers
+
+create trigger tr_payment_balance after
+insert
+    on
+    reports.payment for each row execute function reports.f_tr_payment();
+
+
+-- reports.payment_2023 определение
+
+CREATE TABLE reports.payment_2023 PARTITION OF reports.payment (
+	CONSTRAINT payment_2023_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2023') TO ('2024');
+
+
+-- reports.payment_2024 определение
+
+CREATE TABLE reports.payment_2024 PARTITION OF reports.payment (
+	CONSTRAINT payment_2024_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2024') TO ('2025');
+
+
+-- reports.payment_2025 определение
+
+CREATE TABLE reports.payment_2025 PARTITION OF reports.payment (
+	CONSTRAINT payment_2025_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2025') TO ('2026');
+
+
+-- reports.payment_2026 определение
+
+CREATE TABLE reports.payment_2026 PARTITION OF reports.payment (
+	CONSTRAINT payment_2026_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2026') TO ('2027');
+
+
+-- reports.payment_2027 определение
+
+CREATE TABLE reports.payment_2027 PARTITION OF reports.payment (
+	CONSTRAINT payment_2027_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2027') TO ('2028');
+
+
+-- reports.payment_2028 определение
+
+CREATE TABLE reports.payment_2028 PARTITION OF reports.payment (
+	CONSTRAINT payment_2028_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2028') TO ('2029');
+
+
+-- reports.payment_2029 определение
+
+CREATE TABLE reports.payment_2029 PARTITION OF reports.payment (
+	CONSTRAINT payment_2029_pkey PRIMARY KEY (idpaymerch)
+) FOR VALUES FROM ('2029') TO ('2030');
+
+
+
+-- DROP FUNCTION reports."!f_balance"(varchar);
+
+CREATE OR REPLACE FUNCTION reports."!f_balance"(xuuid character varying)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xsaldo_in INTEGER;
+		xdebet INTEGER;
+		xkredit INTEGER;
+BEGIN
+  SELECT saldo INTO xsaldo_in FROM reports.extbalance 
+	WHERE uuid = xuuid AND "date" = CURRENT_DATE - 1;
+	SELECT (data_json ->> 'amount')::integer INTO xdebet FROM reports.payment 
+	WHERE (data_json ->> 'uuid') = xuuid AND LEFT(data_json ->> 'datetime',10) = CURRENT_DATE::text; 
+	SELECT amount INTO xkredit FROM reports.job; 
+	RETURN xdebet;
+END
+$function$
+;
+
+-- DROP FUNCTION reports.f_count_balance(bpchar);
+
+CREATE OR REPLACE FUNCTION reports.f_count_balance(xuuid character)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xsaldo_json JSON DEFAULT '[]';
+		xsum_debet INTEGER;
+		xsum_credit INTEGER;
+		xsaldo_in INTEGER; 
+		xsaldo_curr INTEGER;
+		xcore VARCHAR;
+BEGIN
+	FOR xcore IN (SELECT DISTINCT core FROM reports.daybalance 
+	WHERE uuid = xuuid AND "date"::date = CURRENT_DATE)
+		LOOP
+			SELECT saldo_yesterday INTO xsaldo_in FROM reports.daybalance 
+			WHERE core = xcore AND "date"::date = CURRENT_DATE;
+			IF xsaldo_in IS NULL THEN xsaldo_in = 0; END IF;
+			SELECT SUM(amount_debet),SUM(amount_credit) INTO xsum_debet,xsum_credit 
+			FROM reports.finoperation WHERE core = xcore AND datetime::date = CURRENT_DATE;
+			IF xsum_debet IS NULL THEN xsum_debet = 0; END IF;
+			IF xsum_credit IS NULL THEN xsum_credit = 0; END IF; 
+			xsaldo_curr := xsaldo_in + xsum_debet - xsum_credit;
+			xsaldo_json := xsaldo_json::jsonb || jsonb_build_object('core',xcore,'saldo',xsaldo_curr);
+		END LOOP;
+		xsaldo_json := jsonb_build_object('uuid',xuuid,'balance',xsaldo_json);
+	RETURN xsaldo_json;
+END
+$function$
+;
+
+-- DROP FUNCTION reports.f_tr_job();
+
+CREATE OR REPLACE FUNCTION reports.f_tr_job()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xamount INTEGER;
+		xid_qtranz INTEGER;
+		xservice VARCHAR(5);
+		xfirm VARCHAR(6);
+		xregion VARCHAR (5);
+		xcore VARCHAR (10);
+		xuuid VARCHAR;
+BEGIN
+	SELECT NEW.amount,NEW.service,NEW.firm,NEW.region,NEW.core,NEW.qtranz_job,NEW.uuid 
+	INTO xamount,xservice,xfirm,xregion,xcore,xid_qtranz,xuuid FROM reports.job;
+  INSERT INTO reports.finoperation (amount_credit,datetime,descript,service,firm,region,core,"operation",id_parent,tbl_parent,uuid)
+	VALUES (xamount,now(),'услуга',xservice,xfirm,xregion,xcore,'credit',xid_qtranz,'job',xuuid);
+	RETURN NULL;
+END
+$function$
+;
+
+-- DROP FUNCTION reports.f_tr_payment();
+
+CREATE OR REPLACE FUNCTION reports.f_tr_payment()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xamount INTEGER;
+		xid_qtranz INTEGER;
+		xservice INTEGER;
+		xnamefirm VARCHAR;
+		xfirm VARCHAR(6);
+		xregion VARCHAR (50);
+		xcore VARCHAR (10);
+		xmerchant VARCHAR;
+BEGIN
+	SELECT NEW.data_json ->> 'amount',(NEW.idpaymerch ->> 'merch')::integer,LEFT(NEW.data_json ->> 'principal',6),NEW.qtranz 
+	INTO xamount,xservice,xcore,xid_qtranz FROM reports.payment;
+	SELECT fljson_firm ->> 'namefirm', fljson_firm ->> 'city' INTO xnamefirm,xregion 
+	FROM common.firmservice WHERE idfirm = xcore;
+	SELECT accesuaries ->> 'name' INTO xmerchant 
+	FROM common.merchant WHERE idmerch = xservice;
+  INSERT INTO reports.finoperation (amount_debet,datetime,descript,service,firm,region,core,"operation",id_parent,tbl_parent,uuid)
+	VALUES (xamount,now(),'пополнение',xmerchant,xnamefirm,xregion,xcore,'debet',xid_qtranz,'payment','пока пусто');
+	RETURN NULL;
+END
+$function$
+;
+
+-- DROP FUNCTION reports.f_tr_payment_test();
+
+CREATE OR REPLACE FUNCTION reports.f_tr_payment_test()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xamount INTEGER;
+		xid_qtranz INTEGER;
+		xservice INTEGER;
+		xnamefirm VARCHAR;
+		xfirm VARCHAR(6);
+		xregion VARCHAR(50);
+		xcore VARCHAR(10);
+		xmerchant VARCHAR;
+BEGIN
+	SELECT data_json ->> 'amount',(idpaymerch ->> 'merch')::integer,LEFT(data_json ->> 'principal',6),qtranz 
+	INTO xamount,xservice,xcore,xid_qtranz FROM reports.payment WHERE qtranz = 2366;
+	SELECT fljson_firm ->> 'namefirm', fljson_firm ->> 'city' INTO xnamefirm,xregion 
+	FROM common.firmservice WHERE idfirm = xcore;
+	SELECT accesuaries ->> 'name' INTO xmerchant 
+	FROM common.merchant WHERE idmerch = xservice;
+  INSERT INTO reports.finoperation (amount_debet,datetime,descript,service,firm,region,core,"operation",id_parent,tbl_parent,uuid)
+	VALUES (xamount,now(),'пополнение',xmerchant,xnamefirm,xregion,xcore,'debet',xid_qtranz,'payment','пока пусто');
+	RETURN xid_qtranz;
+END
+$function$
+;
+
+-- DROP SCHEMA sms;
+
+CREATE SCHEMA sms AUTHORIZATION andrey;
+
+-- DROP SEQUENCE sms.info_id_seq;
+
+CREATE SEQUENCE sms.info_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE sms.syssms_id_seq;
+
+CREATE SEQUENCE sms.syssms_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;-- sms.info определение
+
+-- Drop table
+
+-- DROP TABLE sms.info;
+
+CREATE TABLE sms.info (
+	id int4 GENERATED ALWAYS AS IDENTITY( INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START 1 CACHE 1 NO CYCLE) NOT NULL,
+	templates jsonb NULL,
+	"enable" bool NULL
+);
+
+
+-- sms.syssms определение
+
+-- Drop table
+
+-- DROP TABLE sms.syssms;
+
+CREATE TABLE sms.syssms (
+	id int8 GENERATED BY DEFAULT AS IDENTITY( INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START 1 CACHE 1 NO CYCLE) NOT NULL,
+	send varchar NULL,
+	answer varchar NULL,
+	status varchar NULL
+);
+
+
+-- sms.users определение
+
+-- Drop table
+
+-- DROP TABLE sms.users;
+
+CREATE TABLE sms.users (
+	id_users varchar(255) NOT NULL,
+	pass varchar(255) NULL,
+	descriptions varchar(255) NULL,
+	CONSTRAINT userssms_pkey PRIMARY KEY (id_users)
+);
+
+
+
+-- DROP FUNCTION sms.f_ansoperator(json, int4);
+
+CREATE OR REPLACE FUNCTION sms.f_ansoperator(answ json, nid integer)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+ BEGIN
+    UPDATE sms.syssms SET answer = answ WHERE id = nid ;
+ END
+$function$
+;
+
+-- DROP FUNCTION sms.f_api_users(bpchar);
+
+CREATE OR REPLACE FUNCTION sms.f_api_users(xlogin character)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE xvalue json;
+	BEGIN
+	SELECT json_build_object('key',"id_users",'password',"pass") INTO xvalue FROM sms.users WHERE id_users = xlogin;
+	RETURN xvalue;
+	END;
+$function$
+;
+
+-- DROP FUNCTION sms.f_check(json);
+
+CREATE OR REPLACE FUNCTION sms.f_check(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xans JSON;
+	DECLARE xans2 JSON;
+	DECLARE xurl VARCHAR;
+	DECLARE xurlx VARCHAR;
+	DECLARE xdata VARCHAR;
+    DECLARE xnewid INTEGER;
+    DECLARE xamount VARCHAR;
+    DECLARE xdate VARCHAR;
+    DECLARE xkkt VARCHAR;
+    DECLARE xphone VARCHAR;
+	DECLARE xid INTEGER DEFAULT 1;
+	DECLARE xtimestamp VARCHAR;
+	--input data:
+	--{
+    --"amount": "300",
+    --"data":"21.07.2023 21:11",
+    --"kkt":"2784681053779",
+    --"url":"check.ofd.ru/rec/7284440500019011/17232/2837128389"
+	--"phone": "+79181234567",
+    --}
+BEGIN
+	--xtimestamp := jsonb_build_object('timestamp',common.f_timestamp());
+	xamount := x_json::jsonb ->> 'amount';
+	xdate := x_json::jsonb ->> 'data';
+	xkkt := x_json::jsonb ->> 'kkt';
+	xurlx := x_json::jsonb ->> 'url';
+	xphone := x_json::jsonb ->> 'phone';
+	SELECT templates ->> 'Url', templates ->> 'Check' INTO xurl, xdata FROM sms.info WHERE id = xid ;
+    xdata := REPLACE(xdata , 'xamountx', xamount);
+    xdata := REPLACE(xdata , 'xdatax', xdate);
+    xdata := REPLACE(xdata , 'xkktx', xkkt);  
+    xdata := REPLACE(xdata , 'xurlx', xurlx);   
+    xdata := REPLACE(xdata , '@phone', xphone::text);
+    xdata := jsonb_build_object('Body', xdata::jsonb);
+	INSERT INTO sms.syssms (send) VALUES (xdata ) RETURNING id INTO xnewid;
+    xans2 := jsonb_build_object('Url', xurl,'newid',xnewid ) ;
+    xans := xans2::jsonb || xdata::jsonb ;
+  RETURN xans;
+END;
+--output data:
+--{
+--{"Url": "https://new.smsgorod.ru/apiSms/create", 
+--"Body": {"sms": {"text": "Чек на %d руб. от %d. KKT %d: %w,  moatp.ru", "phone": "79181234567", "sender": "VIRTA", "channel": "char"}, 
+--"apiKey": "W4RtBOyBlPmVMshbxDem4Z62ZR5qTIIb0jBbPl0kxCGZ5e42"}, "newid": 5}
+--}
+$function$
+;
+
+-- DROP FUNCTION sms.f_data(json);
+
+CREATE OR REPLACE FUNCTION sms.f_data(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xans JSON;
+	DECLARE xans2 JSON;
+	DECLARE xurl VARCHAR;
+	DECLARE xdata VARCHAR;
+    DECLARE xnewid INTEGER;
+    DECLARE xcode VARCHAR;
+    DECLARE xphone VARCHAR;
+	DECLARE xtemp INTEGER DEFAULT 1;
+	DECLARE xtimestamp VARCHAR;
+	--input data:
+	--{
+    --"code": "1234",
+	--"phone": "+79181234567",
+    --}
+BEGIN
+	--xtimestamp := jsonb_build_object('timestamp',common.f_timestamp());
+	xcode := x_json::jsonb ->> 'code';
+	xphone := x_json::jsonb ->> 'phone';
+	SELECT templates ->> 'Url', templates ->> 'Data' INTO xurl, xdata FROM sms.info WHERE id = xtemp ;
+    xdata := REPLACE(xdata , 'xcodex', xcode);
+    xdata := REPLACE(xdata , '@phone', xphone::text);
+    xdata := jsonb_build_object('Body', xdata::jsonb);
+	INSERT INTO sms.syssms (send) VALUES (xdata ) RETURNING id INTO xnewid;
+    xans2 := jsonb_build_object('Url', xurl,'newid',xnewid ) ;
+    xans := xans2::jsonb || xdata::jsonb ;
+  RETURN xans;
+END;
+--output data:
+--{
+--{"Url": "https://new.smsgorod.ru/apiSms/create", 
+--"Body": {"sms": {"text": "Ваш проверочный код 1234 ,  moatp.ru", "phone": "79181234567", "sender": "VIRTA", "channel": "char"}, 
+--"apiKey": "W4RtBOyBlPmVMshbxDem4Z62ZR5qTIIb0jBbPqzixCGZ5e42"}, "newid": 5}
+--}
+$function$
+;
+
+-- DROP FUNCTION sms.f_status(json);
+
+CREATE OR REPLACE FUNCTION sms.f_status(x_json json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE xans JSON;
+	DECLARE xans2 JSON;
+	DECLARE xsmsid JSON;
+	DECLARE xurl VARCHAR;
+	DECLARE xdata VARCHAR;
+    DECLARE xxid INTEGER;
+	DECLARE xid INTEGER DEFAULT 1;
+	DECLARE xtimestamp VARCHAR;
+	--input data:
+	--{
+    --"id": 1234
+    --}
+BEGIN
+	--xtimestamp := jsonb_build_object('timestamp',common.f_timestamp());
+	xxid := x_json::jsonb ->> 'id';
+	SELECT templates ->> 'UrlStatus', templates ->> 'BodyStatus' INTO xurl, xdata FROM sms.info WHERE id = xid ;
+    xsmsid := jsonb_build_object('apiSmsIdList', xxid::numeric);
+    xdata := xdata::jsonb || xsmsid::jsonb ; 
+    xdata := jsonb_build_object('Body', xdata::jsonb);
+    xans2 := jsonb_build_object('Url', xurl ) ;
+    xans := xans2::jsonb || xdata::jsonb ;
+   RETURN xans;
+   
+END;
+--output data:
+--{
+--{"Url": "https://new.smsgorod.ru/apiSms/get", 
+--"Body": {}, 
+--"apiKey": "W4RtBOyBlPmVMshbxDem4Z62ZR5qTIIb0jBbPl0k4sAu7ags6q42"}}
+--}
+$function$
+;
+
+-- DROP SCHEMA top_up;
+
+CREATE SCHEMA top_up AUTHORIZATION postgres;
+
+-- DROP TYPE top_up."status_order";
+
+CREATE TYPE top_up."status_order" AS ENUM (
+	'new',
+	'paid');
+
+-- DROP SEQUENCE top_up.merch_sch_idmerch_seq;
+
+CREATE SEQUENCE top_up.merch_sch_idmerch_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32000
+	START 1
+	CACHE 1
+	NO CYCLE;-- top_up.merch_scheme определение
+
+-- Drop table
+
+-- DROP TABLE top_up.merch_scheme;
+
+CREATE TABLE top_up.merch_scheme (
+	idmerch int2 DEFAULT nextval('top_up.merch_sch_idmerch_seq'::regclass) NOT NULL,
+	accesuaries jsonb NULL,
+	login varchar(50) NOT NULL,
+	notification jsonb NULL,
+	"enable" bool DEFAULT true NOT NULL,
+	CONSTRAINT merch_scheme_pkey PRIMARY KEY (idmerch)
+);
+
+-- Table Triggers
+
+create trigger tr_paysys after
+insert
+    or
+update
+    of enable,
+    accesuaries on
+    top_up.merch_scheme for each row execute function top_up.f_notify_paysys();
+
+
+-- top_up."order" определение
+
+-- Drop table
+
+-- DROP TABLE top_up."order";
+
+CREATE TABLE top_up."order" (
+	param jsonb NULL,
+	id_paybank int4 NULL,
+	"enable" top_up."status_order" NULL,
+	datetime timestamp(6) DEFAULT now() NULL,
+	id_order varchar(50) DEFAULT common.uuid_v7_gen() NOT NULL,
+	CONSTRAINT order_pkey PRIMARY KEY (id_order)
+);
+
+
+
+-- DROP FUNCTION top_up.f_notify_paysys();
+
+CREATE OR REPLACE FUNCTION top_up.f_notify_paysys()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN 
+	PERFORM pg_notify('ch_paysys', 'change');
+	RETURN NULL;
+END
+$function$
+;
+
+-- DROP FUNCTION top_up.f_order(json);
+
+CREATE OR REPLACE FUNCTION top_up.f_order(xjson json)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xproducts JSON;
+		x_json JSON;
+		xquery_bank VARCHAR;
+		xparam JSON;
+		xid VARCHAR(50);
+		xlogin VARCHAR(50);
+		xmerch VARCHAR;
+		xaccount VARCHAR(12);
+		xurl_callback VARCHAR;
+		xdatetime VARCHAR(30);
+		xphone VARCHAR(12);
+		xemail VARCHAR;
+		xservice VARCHAR(10);
+		xname_prod VARCHAR;
+		xsuplier_phone VARCHAR;
+		xfirm VARCHAR(6);
+		xname_firm VARCHAR;
+		xloc VARCHAR;
+		xserv_name VARCHAR;
+		xamount INTEGER;
+		xprice INTEGER;
+		xid_paybank INTEGER;
+	--inside:
+	--{	
+    --"accountNumber": "3333333333",
+    --"amount": "1000",
+    --"email": null,
+    --"phone": null,
+    --"receipt": false,
+		--"merch": 28
+--}	
+BEGIN
+	xmerch := (xjson::jsonb ->> 'merch');
+	xamount := (xjson::jsonb ->> 'amount');
+	xprice := xamount;
+	--xamount := xamount::integer * 100;
+	xphone := (xjson::jsonb ->> 'phone');
+	xaccount := (xjson::jsonb ->> 'accountNumber');
+	xfirm := LEFT(xaccount,6);
+	SELECT 'Локация: '||(fljson_firm ->> 'city'),fljson_firm ->> 'service','"'||(fljson_firm ->> 'login')||'"','Кому: '||(fljson_firm ->> 'namefirm') 
+	INTO xloc,xservice,xsuplier_phone,xname_firm FROM common.firmservice WHERE idfirm = xfirm;
+	SELECT 'За: '||service_name INTO xserv_name FROM common.service WHERE id_service = xservice;
+	IF xservice <> '9' THEN
+		SELECT '"'||service_name||'"' INTO xname_prod FROM common.service WHERE id_service = xservice;
+		SELECT accesuaries -> 'products' INTO xproducts FROM top_up.merch_scheme WHERE idmerch = 1;
+		xproducts := jsonb_set(xproducts::jsonb,'{0,name_prod}',xname_prod::jsonb,FALSE);
+		xproducts := jsonb_set(xproducts::jsonb,'{0,price}',(xprice::text)::jsonb,FALSE); 
+		xproducts := jsonb_set(xproducts::jsonb,'{0,amount_prod}',(xprice::text)::jsonb,FALSE);
+		xproducts := jsonb_set(xproducts::jsonb,'{0,supplier_phone}',xsuplier_phone::jsonb,FALSE);
+	END IF;
+	IF (xjson::jsonb ->> 'receipt')::boolean = true THEN
+		SELECT accesuaries ->> 'default_email' INTO xemail FROM top_up."merch_scheme" WHERE accesuaries ->> 'merch' = xmerch;
+		xjson := xjson::jsonb - 'email' || jsonb_build_object('email',xemail);
+	END IF;
+	x_json := jsonb_build_object('loc',xloc,'service',xserv_name,'firm',xname_firm);
+	xjson := xjson::jsonb || x_json::jsonb;
+	INSERT INTO top_up."order" (param,"enable") VALUES (xjson,'new') 
+	ON CONFLICT DO NOTHING RETURNING id_order,datetime INTO xid,xdatetime;
+	SELECT "login",accesuaries ->> 'url_callback' 
+	INTO xlogin,xurl_callback FROM top_up.merch_scheme WHERE accesuaries ->> 'merch' = xmerch;
+	xparam := jsonb_build_object('login_dev',xlogin,'url_callback',xurl_callback,'id_order',xid,'amount',xamount,
+	'phone_customer',xphone,'email_customer',xemail,'datetime',xdatetime,'principal',xaccount, 'products',xproducts) || x_json::jsonb;
+	xquery_bank := mytosb.f_syspay(xparam);
+	xid_paybank := xquery_bank::jsonb ->> 'newid';	
+	UPDATE top_up."order" SET id_paybank = xid_paybank WHERE id_order = xid;
+	xquery_bank := xquery_bank::jsonb || jsonb_build_object('id_order',xid,'account',xaccount,'status','new'); 
+	xquery_bank := xquery_bank::jsonb || x_json::jsonb;
+	RETURN xquery_bank;
+END
+$function$
+;
+
+-- DROP FUNCTION top_up.f_order_id(bpchar);
+
+CREATE OR REPLACE FUNCTION top_up.f_order_id(xid_order character)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xans VARCHAR DEFAULT '{"ans": "new"}';
+		xfirm VARCHAR(6);
+		xloc VARCHAR;
+		xaccount VARCHAR(10);
+		xname_firm VARCHAR;
+		xserv_name VARCHAR;
+		xdescript JSON;
+	  xid_idpaybank INTEGER;
+		xservice VARCHAR(5);
+		xenable BOOLEAN;
+	BEGIN
+	SELECT id_paybank,(param::jsonb - '{email,merch,phone,amount,receipt}'::text[]) 
+	INTO xid_idpaybank,xdescript::jsonb||jsonb_build_object('id_order',xid_order)  
+	FROM top_up."order" WHERE id_order = xid_order;
+	xaccount := xdescript ->> 'accountNumber';
+	SELECT "enable" INTO xenable FROM mytosb.syspay WHERE id_paybank = xid_idpaybank;
+	IF xenable = TRUE THEN
+		xans := jsonb_build_object('ans','paid')||xdescript::jsonb;
+		UPDATE top_up."order" SET "enable" = 'paid' WHERE id_order = xid_order; 
+	ELSE
+		xans := xans::jsonb||jsonb_build_object('id_order',xid_order,'accountNumber',xaccount);
+  END IF;
+	RETURN xans;
+END
+$function$
+;
+
+-- DROP FUNCTION top_up.f_order_status(bpchar);
+
+CREATE OR REPLACE FUNCTION top_up.f_order_status(xid_order character)
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE 
+		xans VARCHAR DEFAULT '{"ans": "new"}';
+		xfirm VARCHAR;
+		xloc VARCHAR;
+		xname_firm VARCHAR;
+		xserv_name VARCHAR;
+		xdescript JSON;
+	  xid_idpaybank INTEGER;
+		xservice VARCHAR;
+		xenable BOOLEAN;
+	BEGIN
+	SELECT id_paybank,(param::jsonb - '{email,merch,phone,amount,receipt}'::text[]) 
+	INTO xid_idpaybank,xdescript FROM top_up."order" WHERE id_order = xid_order;
+	SELECT "enable" INTO xenable FROM mytosb.syspay WHERE id_paybank = xid_idpaybank;
+	IF xenable = TRUE THEN
+		xans := jsonb_build_object('ans','paid')||xdescript::jsonb;
+		UPDATE top_up."order" SET "enable" = 'paid' WHERE id_order = xid_order; 
+  END IF;
+	RETURN xans;
+END
+$function$
+;
+
+-- DROP FUNCTION top_up.f_topup();
+
+CREATE OR REPLACE FUNCTION top_up.f_topup()
+ RETURNS character varying
+ LANGUAGE plpgsql
+AS $function$
+	DECLARE
+		xmerch VARCHAR;
+BEGIN
+	SELECT array_to_json(array_agg(jsonb_build_object('id',accesuaries ->> 'merch', 'descript', accesuaries ->> 'descript')))
+	INTO xmerch FROM top_up.merch_scheme WHERE "enable" = TRUE;
+	RETURN xmerch;
+END
+--[{"id": "28", "descript": "система быстрых платежей"},{"id": "21", "descript": "оплата картой"}]
+$function$
+;
+
+-- DROP SCHEMA "user";
+
+CREATE SCHEMA "user" AUTHORIZATION postgres;
+
+-- DROP TYPE "user"."settings_enum";
+
+CREATE TYPE "user"."settings_enum" AS ENUM (
+	'cont',
+	'core',
+	'role',
+	'firm');
+
+-- DROP TYPE "user"."usergroup_enum";
+
+CREATE TYPE "user"."usergroup_enum" AS ENUM (
+	'auto',
+	'hand');
+
+-- DROP SEQUENCE "user".contact_id_list_seq;
+
+CREATE SEQUENCE "user".contact_id_list_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32767
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE "user".contact_id_list_seq1;
+
+CREATE SEQUENCE "user".contact_id_list_seq1
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32767
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE "user".user_contact_id_contact_seq;
+
+CREATE SEQUENCE "user".user_contact_id_contact_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE "user".usergroup_id_usergroup_seq;
+
+CREATE SEQUENCE "user".usergroup_id_usergroup_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 32767
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE "user".users_idpriv_seq;
+
+CREATE SEQUENCE "user".users_idpriv_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;-- "user".settings определение
+
+-- Drop table
+
+-- DROP TABLE "user".settings;
+
+CREATE TABLE "user".settings (
+	id_list int2 DEFAULT nextval('"user".contact_id_list_seq1'::regclass) NOT NULL,
+	list_contact varchar(50) NULL,
+	CONSTRAINT contact_pkey PRIMARY KEY (id_list)
+);
+
+
+-- "user".user_settings определение
+
+-- Drop table
+
+-- DROP TABLE "user".user_settings;
+
+CREATE TABLE "user".user_settings (
+	id_contact int8 DEFAULT nextval('"user".user_contact_id_contact_seq'::regclass) NOT NULL,
+	contact varchar(50) NULL,
+	type_contact int2 NULL,
+	uuid_drive varchar(50) NULL,
+	"enable" bool DEFAULT true NULL,
+	required bool DEFAULT false NULL,
+	type_settings "user"."settings_enum" NULL,
+	CONSTRAINT user_contact_pkey PRIMARY KEY (id_contact)
+);
+
+-- Table Triggers
+
+create trigger f_tr_user_contact after
+insert
+    or
+update
+    of enable on
+    "user".user_settings for each row execute function "user".f_tr_user_contact();
+
+
+-- "user".usergroup определение
+
+-- Drop table
+
+-- DROP TABLE "user".usergroup;
+
+CREATE TABLE "user".usergroup (
+	id_usergroup smallserial NOT NULL,
+	name_usergroup varchar(255) NULL,
+	change_role "user"."usergroup_enum" NULL,
+	CONSTRAINT usergroup_pkey PRIMARY KEY (id_usergroup)
+);
+
+
+-- "user".users определение
+
+-- Drop table
+
+-- DROP TABLE "user".users;
+
+CREATE TABLE "user".users (
+	idpriv serial4 NOT NULL,
+	fljson_privilege jsonb NULL,
+	uuid_key uuid DEFAULT common.uuid_v7_gen() NOT NULL,
+	login varchar(50) NULL,
+	pass_hash varchar(50) NULL,
+	datetime timestamp(6) DEFAULT now() NOT NULL,
+	"enable" bool DEFAULT true NOT NULL,
+	CONSTRAINT autoinc UNIQUE (idpriv),
+	CONSTRAINT spr_privilege_pkey PRIMARY KEY (uuid_key)
+);
+
+
+-- "user".mv_phone исходный текст
+
+CREATE MATERIALIZED VIEW "user".mv_phone
+TABLESPACE pg_default
+AS SELECT user_settings.uuid_drive,
+    user_settings.contact
+   FROM "user".user_settings
+  WHERE user_settings.type_contact = 1 AND user_settings.enable = true
+WITH DATA;
+
+
+
+-- DROP FUNCTION "user".f_phone(bpchar);
+
+CREATE OR REPLACE FUNCTION "user".f_phone(xphone character)
+ RETURNS character varying
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+	DECLARE
+		xcount INTEGER;
+		xbalance VARCHAR;
+		xuuid VARCHAR;
+		xsaldo VARCHAR;
+		xcore VARCHAR;
+BEGIN
+		SELECT COUNT(contact),MAX(uuid_drive) INTO xcount,xuuid 
+		FROM "user".mv_phone 
+		WHERE RIGHT(contact,10) = RIGHT(xphone,10);
+		IF xcount = 0 THEN
+			INSERT INTO "user"."users" ("login") VALUES ('')
+			RETURNING uuid_key INTO xuuid;
+			INSERT INTO "user".user_settings (contact,type_contact,uuid_drive)
+			VALUES (xphone,1,xuuid);
+			INSERT INTO reports.daybalance (saldo_yesterday,core,uuid,"date")
+			VALUES (0,'000000',xuuid,CURRENT_DATE - 1);
+			--INSERT INTO reports.balance (amount,datetime,descript,service,firm,region,core,"operation",id_parent,tbl_parent)
+			--VALUES (0,CURRENT_DATE-1,'остаток','00','00','00','000000','saldo',0,0);
+		END IF;
+		xbalance := reports.f_count_balance(xuuid);
+RETURN xbalance;
+END
+$function$
+;
+
+-- DROP FUNCTION "user".f_role();
+
+CREATE OR REPLACE FUNCTION "user".f_role()
+ RETURNS SETOF text
+ LANGUAGE sql
+AS $function$
+  SELECT jsonb_build_object('id',id_usergroup,'name',name_usergroup) FROM "user".usergroup 
+	WHERE change_role = 'auto'
+$function$
+;
+
+-- DROP FUNCTION "user".f_tr_user_contact();
+
+CREATE OR REPLACE FUNCTION "user".f_tr_user_contact()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+	BEGIN
+		REFRESH MATERIALIZED VIEW "user".mv_phone;
+	RETURN NULL;
+END
+$function$
+;
